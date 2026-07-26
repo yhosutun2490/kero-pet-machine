@@ -212,10 +212,17 @@ export const keroMachine = setup({
     applyBounds: assign(({ context, event }) =>
       applyBoundsContext(context, event as Extract<KeroEvent, { type: 'BOUNDS' }>),
     ),
-    syncPosition: assign(({ event }) => ({
-      position: (event as Extract<KeroEvent, { type: 'POSITION_SYNC' }>).position,
-      velocityX: 0,
-    })),
+    syncPosition: assign(({ context, event }) => {
+      const pos = (event as Extract<KeroEvent, { type: 'POSITION_SYNC' }>).position;
+      // Expand bounds to cover wherever the pet was dropped so clampX never
+      // fights a position the OS itself set during drag.
+      const width = Math.max(context.bounds.width, pos.x + PET_WINDOW_WIDTH);
+      return {
+        position: pos,
+        velocityX: 0,
+        bounds: width > context.bounds.width ? { ...context.bounds, width } : context.bounds,
+      };
+    }),
     resetPerformance: assign({
       actionIndex: 0,
       actionElapsedMs: 0,
