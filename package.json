@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
-    "@xstate/react": "^4.0.0",
+    "@xstate/react": "^6.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "xstate": "^5.0.0"
