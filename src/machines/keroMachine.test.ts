@@ -172,7 +172,7 @@ describe('dragging state', () => {
     const actor = createActor(keroMachine, {
       input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
     }).start();
-    // dt=0.17 (170ms > frameMs=160ms) → 1 animation step; velocityX=300 means
+    // 170ms / RUN_FRAME_MS(80ms) = 2 steps; velocityX=300 means
     // performing-TICK would move position.x to 151, proving the freeze is real.
     actor.send({ type: 'POINTER', dx: 5 }); // velocityX = 300
     actor.send({ type: 'DRAG_START' });
@@ -181,7 +181,7 @@ describe('dragging state', () => {
     expect(s.value).toBe('dragging');
     expect(s.context.position.x).toBe(100); // frozen — performing would give 100 + 300*0.17 = 151
     expect(s.context.position.y).toBe(496);
-    expect(s.context.frame).toBe(1);        // 170ms / 160ms = 1 step
+    expect(s.context.frame).toBe(2);        // 170ms / 80ms = 2 steps
   });
 
   it('POINTER in dragging updates facing', () => {
@@ -226,6 +226,28 @@ describe('dragging state', () => {
     expect(s.value).toBe('performing');
     expect(s.context.position.x).toBe(300);
     expect(s.context.position.y).toBe(200);
+  });
+
+  it('selectSpriteFrame returns run-right row when dragging facing right', () => {
+    const actor = createActor(keroMachine, {
+      input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
+    }).start();
+    actor.send({ type: 'DRAG_START' });
+    actor.send({ type: 'POINTER', dx: 3 }); // facing = right
+    const s = actor.getSnapshot();
+    expect(s.value).toBe('dragging');
+    expect(selectSpriteFrame(s)).toEqual({ row: 1, column: 0 });
+  });
+
+  it('selectSpriteFrame returns run-left row when dragging facing left', () => {
+    const actor = createActor(keroMachine, {
+      input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
+    }).start();
+    actor.send({ type: 'DRAG_START' });
+    actor.send({ type: 'POINTER', dx: -3 }); // facing = left
+    const s = actor.getSnapshot();
+    expect(s.value).toBe('dragging');
+    expect(selectSpriteFrame(s)).toEqual({ row: 2, column: 0 });
   });
 });
 
