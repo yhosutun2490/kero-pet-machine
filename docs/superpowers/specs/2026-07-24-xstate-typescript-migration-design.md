@@ -55,7 +55,8 @@ type KeroEvent =
   | { type: 'DRAG_START' }
   | { type: 'DRAG_END' }
   | { type: 'TAP' }
-  | { type: 'TICK'; dt: number };
+  | { type: 'TICK'; dt: number }
+  | { type: 'POINTER'; dx: number };
 ```
 
 機器結構：
@@ -74,6 +75,7 @@ createMachine({
       on: {
         TAP: { target: 'resting' },
         TICK: { actions: 'advanceActionFrame' },
+        POINTER: { actions: 'applyPointerVelocity' },
       },
     },
     resting: {
@@ -95,8 +97,11 @@ createMachine({
 - `applyBounds`：對應原 `case 'bounds'`，更新 bounds 並 `pinToBottom`。
 - `resetPerformance`（performing.entry）：對應 `toggleResting` 的 else 分支，重置 actionIndex/actionElapsedMs/frame/frameElapsedMs/velocityX。
 - `settleAtBottom`（resting.entry）：對應 `toggleResting` 的 if 分支，貼齊底部、清空 pointer、reset frame。
-- `advanceActionFrame` / `advanceIdleFrame`：對應 `advanceActionFrame` / `advanceFrame` 的 idle 分支，並在每次 TICK 都重新 `pinToBottom` 與累加 `nowMs`（等同原本 `stepKero`）。
-- `POINTER` / `DRAG_START` / `DRAG_END`：不定義 handler，XState 對未宣告事件預設忽略，行為等同現在的 no-op。`looking` state 節點先建立好，未來要讓 pointer hover 進入 looking 時只需加一條 transition，不必重新設計狀態圖。
+- `advanceActionFrame`（performing TICK）：推進動畫幀，並將 `velocityX` 套用到 `position.x`（clamp 在 bounds 內），再將 `velocityX` 重置為 0。不再呼叫 `pinToBottom`——x 軸自由移動，y 軸維持現有底部貼齊邏輯不變。累加 `nowMs`（等同原本 `stepKero`）。
+- `advanceIdleFrame`：對應 `advanceFrame` 的 idle 分支，行為不變。
+- `applyPointerVelocity`（performing POINTER）：根據 `dx`（螢幕實體像素/frame）計算 `velocityX = clamp(dx * 60, -300, 300)`（px/s）；`dx > 0` 時 `facing = 'right'`，`dx < 0` 時 `facing = 'left'`，`dx === 0` 時保持不變。velocityX 在下一個 TICK 被套用後重置為 0，游標靜止時寵物自然停止。
+- `DRAG_START` / `DRAG_END`：不定義 handler，XState 預設忽略。
+- `looking` state 節點先建立好，未來要讓 pointer hover 進入 looking 時只需加一條 transition，不必重新設計狀態圖。
 
 `selectSpriteFrame(snapshot)` 改吃 `StateFrom<typeof keroMachine>`（讀 `snapshot.value` 與 `snapshot.context`），邏輯與現在相同，只是資料來源從 `state.mode` 換成 `snapshot.value`。
 
@@ -104,20 +109,53 @@ createMachine({
 
 ## Hook 設計（src/hooks/useKeroPet.ts）
 
-把 `App.jsx` 目前的三個 `useEffect`（Tauri 連線、rAF tick、視窗位置同步）與 `useMachine` 掛載整合進這個 hook，回傳畫面需要的最小介面：
+把 `App.jsx` 目前的三個 `useEffect` 與 `useMachine` 掛載整合進這個 hook，並新增游標輪詢邏輯。各職責以獨立小 hook 切分，`useKeroPet` 只做組合：
 
 ```ts
+function useTauriSetup(send)      // 連線 Tauri window/webview，取得 monitor bounds 後 send BOUNDS
+function useRafTick(send)          // rAF 迴圈：send TICK；同 frame fire-and-forget getCursorPos() 送 POINTER
+function useTauriPositionSync(pos) // position 變化時 setPosition 同步視窗位置
+
 function useKeroPet() {
-  // useMachine(keroMachine, { input: ... })
-  // useEffect: 連線 Tauri window/webview，取得 monitor bounds 後 send({ type: 'BOUNDS', ... })
-  // useEffect: requestAnimationFrame 迴圈，逐 frame send({ type: 'TICK', dt })
-  // useEffect: state.context.position 變化時同步 Tauri window setPosition
+  const [snapshot, send] = useMachine(keroMachine, { input: ... });
+  useTauriSetup(send);
+  useRafTick(send);
+  useTauriPositionSync(snapshot.context.position);
   return {
     spriteStyle: CSSProperties,
     onTap: () => void,
   };
 }
 ```
+
+**游標輪詢細節（useRafTick 內部）：**
+
+```ts
+const prevCursorRef = useRef<{ x: number; y: number } | null>(null);
+
+function tick(now) {
+  const dt = Math.min(0.05, (now - lastTickRef.current) / 1000);
+  lastTickRef.current = now;
+
+  if (window.__TAURI_INTERNALS__) {
+    getCursorPos().then(pos => {
+      const prev = prevCursorRef.current;
+      if (prev) {
+        const dx = pos.x - prev.x;
+        if (dx !== 0) send({ type: 'POINTER', dx });
+      }
+      prevCursorRef.current = { x: pos.x, y: pos.y };
+    });
+  }
+
+  send({ type: 'TICK', dt });
+  frameId = requestAnimationFrame(tick);
+}
+```
+
+`getCursorPos()` 是非同步 fire-and-forget，不阻塞 rAF；游標是 OS 層渲染，位置本身不進 React state，只作為 XState POINTER 事件的輸入。
+
+**facing 對 sprite 的影響：** `spriteStyle` 的 `useMemo` 中，若 `snapshot.context.facing === 'left'` 則加上 `scaleX(-1)` 水平翻轉；`facing` 的更新由 machine 的 `applyPointerVelocity` action 負責，渲染層不含判斷邏輯。
 
 `App.tsx` 因此只剩：
 
@@ -157,6 +195,8 @@ const snapshot = actor.getSnapshot();
 
 ## 範圍界定（Out of scope）
 
-- 不新增 pointer hover / 拖曳等新互動行為本身，只確保 `looking` 狀態節點存在、未來好接。
+- 不新增 pointer hover / 拖曳等新互動行為，只確保 `looking` 狀態節點存在、未來好接。
 - 不改變視覺/動畫參數（frame 數、時長、sprite row/column 對應）。
 - 不改變 Tauri 視窗定位邏輯的行為，只搬動程式碼位置。
+- 游標移動跟隨（`POINTER` / `applyPointerVelocity`）僅限 `performing` 狀態；`resting` 狀態下寵物貼底不動，`looking` 狀態尚未啟用。
+- 不處理高 DPI / 螢幕縮放對 `getCursorPos()` 座標的影響（留待實測後決定）。
