@@ -152,7 +152,7 @@ function advanceActionFrameContext(
     frame: (context.frame + steps) % action.frames,
     frameElapsedMs: frameElapsed % action.frameMs,
     position: {
-      x: clampX(context.position.x + context.velocityX * event.dt, context.bounds),
+      x: context.position.x + context.velocityX * event.dt,
       y: context.position.y,
     },
     velocityX: 0,

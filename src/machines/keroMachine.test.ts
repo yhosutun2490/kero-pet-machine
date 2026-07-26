@@ -239,17 +239,26 @@ describe('dragging state', () => {
     expect(s.context.position.y).toBe(200);
   });
 
-  it('POSITION_SYNC expands bounds to cover extended-display position', () => {
+  it('POSITION_SYNC + TICK preserves position on right-side extended display', () => {
     const actor = createActor(keroMachine, {
       input: { bounds: { width: 1920, height: 1080 }, position: { x: 100, y: 976 } },
     }).start();
     actor.send({ type: 'DRAG_START' });
-    actor.send({ type: 'POSITION_SYNC', position: { x: 2100, y: 300 } }); // secondary monitor
+    actor.send({ type: 'POSITION_SYNC', position: { x: 2100, y: 300 } });
     actor.send({ type: 'DRAG_END' });
     actor.send({ type: 'TICK', dt: 1 / 60 });
-    const s = actor.getSnapshot();
-    expect(s.context.position.x).toBe(2100); // must not be clamped to primary width
-    expect(s.context.bounds.width).toBeGreaterThanOrEqual(2100 + 96);
+    expect(actor.getSnapshot().context.position.x).toBe(2100);
+  });
+
+  it('POSITION_SYNC + TICK preserves position on left-side extended display (negative x)', () => {
+    const actor = createActor(keroMachine, {
+      input: { bounds: { width: 1920, height: 1080 }, position: { x: 100, y: 976 } },
+    }).start();
+    actor.send({ type: 'DRAG_START' });
+    actor.send({ type: 'POSITION_SYNC', position: { x: -500, y: 300 } });
+    actor.send({ type: 'DRAG_END' });
+    actor.send({ type: 'TICK', dt: 1 / 60 });
+    expect(actor.getSnapshot().context.position.x).toBe(-500);
   });
 
   it('TICK in performing preserves dropped Y after drag', () => {
