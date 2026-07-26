@@ -42,6 +42,7 @@ export type KeroEvent =
   | { type: 'POINTER'; dx: number }
   | { type: 'DRAG_START' }
   | { type: 'DRAG_END' }
+  | { type: 'POSITION_SYNC'; position: { x: number; y: number } }
   | { type: 'TAP' }
   | { type: 'TICK'; dt: number };
 
@@ -172,6 +173,33 @@ function advanceIdleFrameContext(
   };
 }
 
+function advanceDragFrameContext(
+  context: KeroContext,
+  event: Extract<KeroEvent, { type: 'TICK' }>,
+): Partial<KeroContext> {
+  const elapsedMs = event.dt * 1000;
+  let actionIndex = context.actionIndex % ACTIONS.length;
+  let actionElapsedMs = context.actionElapsedMs + elapsedMs;
+
+  while (actionElapsedMs >= ACTIONS[actionIndex].durationMs) {
+    actionElapsedMs -= ACTIONS[actionIndex].durationMs;
+    actionIndex = (actionIndex + 1) % ACTIONS.length;
+  }
+
+  const action = ACTIONS[actionIndex];
+  const frameElapsed = context.frameElapsedMs + elapsedMs;
+  const steps = Math.floor(frameElapsed / action.frameMs);
+  const effectiveSteps = steps > 0 ? steps : 1;
+
+  return {
+    actionIndex,
+    actionElapsedMs,
+    frame: (context.frame + effectiveSteps) % action.frames,
+    frameElapsedMs: frameElapsed % action.frameMs,
+    nowMs: context.nowMs + elapsedMs,
+  };
+}
+
 function applyPointerVelocityContext(
   context: KeroContext,
   event: Extract<KeroEvent, { type: 'POINTER' }>,
@@ -195,6 +223,10 @@ export const keroMachine = setup({
     applyBounds: assign(({ context, event }) =>
       applyBoundsContext(context, event as Extract<KeroEvent, { type: 'BOUNDS' }>),
     ),
+    syncPosition: assign(({ event }) => ({
+      position: (event as Extract<KeroEvent, { type: 'POSITION_SYNC' }>).position,
+      velocityX: 0,
+    })),
     resetPerformance: assign({
       actionIndex: 0,
       actionElapsedMs: 0,
@@ -212,6 +244,9 @@ export const keroMachine = setup({
     advanceActionFrame: assign(({ context, event }) =>
       advanceActionFrameContext(context, event as Extract<KeroEvent, { type: 'TICK' }>),
     ),
+    advanceDragFrame: assign(({ context, event }) =>
+      advanceDragFrameContext(context, event as Extract<KeroEvent, { type: 'TICK' }>),
+    ),
     advanceIdleFrame: assign(({ context, event }) =>
       advanceIdleFrameContext(context, event as Extract<KeroEvent, { type: 'TICK' }>),
     ),
@@ -224,22 +259,32 @@ export const keroMachine = setup({
   context: ({ input }) => createInitialKeroContext(input),
   on: {
     BOUNDS: { actions: 'applyBounds' },
+    POSITION_SYNC: { actions: 'syncPosition' },
   },
   initial: 'performing',
   states: {
     performing: {
       entry: { type: 'resetPerformance' },
       on: {
-        TAP:     { target: 'resting' },
-        TICK:    { actions: 'advanceActionFrame' },
-        POINTER: { actions: 'applyPointerVelocity' },
+        TAP:        { target: 'resting' },
+        TICK:       { actions: 'advanceActionFrame' },
+        POINTER:    { actions: 'applyPointerVelocity' },
+        DRAG_START: { target: 'dragging' },
       },
     },
     resting: {
       entry: { type: 'settleAtBottom' },
       on: {
-        TAP:  { target: 'performing' },
-        TICK: { actions: 'advanceIdleFrame' },
+        TAP:        { target: 'performing' },
+        TICK:       { actions: 'advanceIdleFrame' },
+        DRAG_START: { target: 'dragging' },
+      },
+    },
+    dragging: {
+      on: {
+        TICK:     { actions: 'advanceDragFrame' },
+        POINTER:  { actions: 'applyPointerVelocity' },
+        DRAG_END: { target: 'performing' },
       },
     },
     looking: {

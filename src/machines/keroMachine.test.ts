@@ -150,27 +150,82 @@ describe('TAP', () => {
   });
 });
 
-describe('DRAG_START / DRAG_END', () => {
-  it('DRAG_START does not change state in performing', () => {
+describe('dragging state', () => {
+  it('DRAG_START from performing enters dragging', () => {
     const actor = createActor(keroMachine, {
       input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
     }).start();
     actor.send({ type: 'DRAG_START' });
-    actor.send({ type: 'TICK', dt: 1 });
-    const s = actor.getSnapshot();
-    expect(s.value).toBe('performing');
-    expect(s.context.position.x).toBe(100);
+    expect(actor.getSnapshot().value).toBe('dragging');
   });
 
-  it('DRAG_END does not change state in resting', () => {
+  it('DRAG_START from resting enters dragging', () => {
     const actor = createActor(keroMachine, {
-      input: { bounds: { width: 800, height: 600 }, position: { x: 240, y: 496 } },
+      input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
     }).start();
-    actor.send({ type: 'TAP' }); // → resting
+    actor.send({ type: 'TAP' });
+    actor.send({ type: 'DRAG_START' });
+    expect(actor.getSnapshot().value).toBe('dragging');
+  });
+
+  it('TICK in dragging advances animation frame but leaves position unchanged', () => {
+    const actor = createActor(keroMachine, {
+      input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
+    }).start();
+    // Set velocity first so performing-TICK would move position.x — proving the test
+    // actually fails before dragging state is implemented.
+    actor.send({ type: 'POINTER', dx: 5 }); // velocityX = 300 in performing
+    actor.send({ type: 'DRAG_START' });
+    actor.send({ type: 'TICK', dt: 1 / 60 });
+    const s = actor.getSnapshot();
+    expect(s.value).toBe('dragging');
+    expect(s.context.position.x).toBe(100); // frozen — not 100 + 300*(1/60) ≈ 105
+    expect(s.context.position.y).toBe(496);
+    expect(s.context.frame).toBe(1);
+  });
+
+  it('POINTER in dragging updates facing', () => {
+    const actor = createActor(keroMachine, {
+      input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
+    }).start();
+    actor.send({ type: 'DRAG_START' });
+    expect(actor.getSnapshot().value).toBe('dragging'); // guard: fails before impl
+    actor.send({ type: 'POINTER', dx: -5 });
+    expect(actor.getSnapshot().context.facing).toBe('left');
+  });
+
+  it('DRAG_END transitions to performing', () => {
+    const actor = createActor(keroMachine, {
+      input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
+    }).start();
+    actor.send({ type: 'DRAG_START' });
+    expect(actor.getSnapshot().value).toBe('dragging'); // guard: fails before impl
+    actor.send({ type: 'DRAG_END' });
+    expect(actor.getSnapshot().value).toBe('performing');
+  });
+
+  it('POSITION_SYNC writes OS position into context while dragging', () => {
+    const actor = createActor(keroMachine, {
+      input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
+    }).start();
+    actor.send({ type: 'DRAG_START' });
+    actor.send({ type: 'POSITION_SYNC', position: { x: 300, y: 200 } });
+    const s = actor.getSnapshot();
+    expect(s.context.position.x).toBe(300);
+    expect(s.context.position.y).toBe(200);
+  });
+
+  it('position is preserved through POSITION_SYNC → DRAG_END → performing', () => {
+    const actor = createActor(keroMachine, {
+      input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
+    }).start();
+    actor.send({ type: 'DRAG_START' });
+    actor.send({ type: 'POSITION_SYNC', position: { x: 300, y: 200 } });
     actor.send({ type: 'DRAG_END' });
     const s = actor.getSnapshot();
-    expect(s.value).toBe('resting');
-    expect(s.context.velocityX).toBe(0);
+    expect(s.value).toBe('performing');
+    expect(s.context.position.x).toBe(300);
+    expect(s.context.position.y).toBe(200);
   });
 });
 
