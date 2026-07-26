@@ -114,12 +114,13 @@ describe('POINTER', () => {
 
   it('is ignored in resting state', () => {
     const actor = createActor(keroMachine, { input: { bounds: { width: 800, height: 600 } } }).start();
+    actor.send({ type: 'POINTER', dx: -5 }); // set facing to 'left' while in performing
     actor.send({ type: 'TAP' }); // → resting
-    actor.send({ type: 'POINTER', dx: 10 });
+    actor.send({ type: 'POINTER', dx: 10 }); // should be ignored
     const s = actor.getSnapshot();
     expect(s.value).toBe('resting');
     expect(s.context.velocityX).toBe(0);
-    expect(s.context.facing).toBe('right');
+    expect(s.context.facing).toBe('left'); // facing must not be reset by resting or ignored POINTER
   });
 });
 
