@@ -9,6 +9,8 @@
     "core:window:allow-current-monitor",
     "core:window:allow-set-background-color",
     "core:window:allow-set-position",
+    "core:window:allow-start-dragging",
+    "core:window:allow-outer-position",
     "core:webview:allow-set-webview-background-color"
   ]
 }
