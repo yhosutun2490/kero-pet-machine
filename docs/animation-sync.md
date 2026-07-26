@@ -63,3 +63,49 @@ During drag, a `requestAnimationFrame` loop calls `cursorPosition()` each frame 
 |-----------|-----------|------|
 | Machine → OS | `useTauriPositionSync` → `setPosition()` | Normal movement (TICK-driven) |
 | OS → Machine | `POSITION_SYNC` event → `syncPosition` action | After drag ends |
+
+---
+
+## Multi-Monitor / Extended Display
+
+### The Problem
+
+Physical screen coordinates are global. A secondary monitor to the right of the primary might use x ≥ 1920; one to the left uses negative x values. Two mechanisms originally caused the pet to snap back when dropped on an extended display:
+
+**1. `clampX` in `advanceActionFrameContext`**
+
+```ts
+// OLD — caused snap-back
+x: clampX(context.position.x + context.velocityX * event.dt, context.bounds)
+
+// clampX: Math.max(0, Math.min(x, bounds.width - PET_WINDOW_WIDTH))
+```
+
+`Math.max(0, ...)` clips negative x (left monitor). `Math.min(x, bounds.width - ...)` clips x beyond the primary monitor width (right monitor). The first TICK after `DRAG_END` would clamp the synced position back into primary-monitor range.
+
+**2. `bounds.width` only covered the primary monitor**
+
+`BOUNDS` was set from `currentMonitor().workArea.size`, so `clampX` had no knowledge of secondary monitors at all.
+
+### The Fix
+
+**Remove `clampX` from `advanceActionFrameContext`.**
+
+In `performing` state, `velocityX` is always 0 when TICK fires — `POINTER` events only arrive during active drag, which routes to the `dragging` state. So the clamp was a no-op for normal operation and only caused harm after drop. Position now just carries forward unchanged:
+
+```ts
+x: context.position.x + context.velocityX * event.dt,  // velocityX is always 0 here
+```
+
+**`syncPosition` auto-expands `bounds.width`** when the dropped position exceeds it (right monitor):
+
+```ts
+const width = Math.max(context.bounds.width, pos.x + PET_WINDOW_WIDTH);
+bounds: width > context.bounds.width ? { ...context.bounds, width } : context.bounds,
+```
+
+This ensures that even if `availableMonitors()` fails or the monitor layout changes, the bounds always include where the OS actually placed the window.
+
+### Remaining Limitation
+
+`bottomY` (the floor the pet rests on) is derived from the primary monitor's work-area height. If monitors have different heights, the pet's resting Y on a taller secondary monitor may not be at that monitor's visual bottom. This is acceptable for the current design — the pet's floor is defined by the primary display.
