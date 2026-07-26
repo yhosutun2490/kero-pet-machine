@@ -51,7 +51,7 @@ function useTauriSetup(send: Send): void {
   }, [send]);
 }
 
-// rAF loop: sends TICK every frame. Also fire-and-forget polls getCursorPos()
+// rAF loop: sends TICK every frame. Also fire-and-forget polls cursorPosition()
 // to send POINTER with dx to the machine.
 function useRafTick(send: Send): void {
   const lastTickRef = useRef(performance.now());
