@@ -189,12 +189,11 @@ function advanceDragFrameContext(
   const action = ACTIONS[actionIndex];
   const frameElapsed = context.frameElapsedMs + elapsedMs;
   const steps = Math.floor(frameElapsed / action.frameMs);
-  const effectiveSteps = steps > 0 ? steps : 1;
 
   return {
     actionIndex,
     actionElapsedMs,
-    frame: (context.frame + effectiveSteps) % action.frames,
+    frame: (context.frame + steps) % action.frames,
     frameElapsedMs: frameElapsed % action.frameMs,
     nowMs: context.nowMs + elapsedMs,
   };

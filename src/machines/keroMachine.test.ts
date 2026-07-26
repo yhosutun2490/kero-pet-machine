@@ -172,16 +172,16 @@ describe('dragging state', () => {
     const actor = createActor(keroMachine, {
       input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
     }).start();
-    // Set velocity first so performing-TICK would move position.x — proving the test
-    // actually fails before dragging state is implemented.
-    actor.send({ type: 'POINTER', dx: 5 }); // velocityX = 300 in performing
+    // dt=0.17 (170ms > frameMs=160ms) → 1 animation step; velocityX=300 means
+    // performing-TICK would move position.x to 151, proving the freeze is real.
+    actor.send({ type: 'POINTER', dx: 5 }); // velocityX = 300
     actor.send({ type: 'DRAG_START' });
-    actor.send({ type: 'TICK', dt: 1 / 60 });
+    actor.send({ type: 'TICK', dt: 0.17 });
     const s = actor.getSnapshot();
     expect(s.value).toBe('dragging');
-    expect(s.context.position.x).toBe(100); // frozen — not 100 + 300*(1/60) ≈ 105
+    expect(s.context.position.x).toBe(100); // frozen — performing would give 100 + 300*0.17 = 151
     expect(s.context.position.y).toBe(496);
-    expect(s.context.frame).toBe(1);
+    expect(s.context.frame).toBe(1);        // 170ms / 160ms = 1 step
   });
 
   it('POINTER in dragging updates facing', () => {
