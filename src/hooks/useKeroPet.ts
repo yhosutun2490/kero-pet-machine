@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useMachine } from '@xstate/react';
 import type { CSSProperties } from 'react';
 import {
@@ -89,13 +89,13 @@ function useTauriPositionSync(position: { x: number; y: number }): void {
 function useDragTracking(send: Send): { onPointerDown: () => void } {
   const stateRef = useRef({ dragging: false, prevX: null as number | null, frameId: 0 });
 
+  // Preload Tauri module so first drag has no cold-import delay.
+  useEffect(() => {
+    if (window.__TAURI_INTERNALS__) import('@tauri-apps/api/window');
+  }, []);
+
   useEffect(() => {
     const s = stateRef.current;
-
-    // Preload Tauri module so first drag has no cold-import delay.
-    if (window.__TAURI_INTERNALS__) {
-      import('@tauri-apps/api/window');
-    }
 
     async function onPointerUp() {
       if (!s.dragging) return;
@@ -117,35 +117,36 @@ function useDragTracking(send: Send): { onPointerDown: () => void } {
     };
   }, [send]);
 
-  return {
-    onPointerDown: () => {
-      const s = stateRef.current;
-      s.dragging = true;
-      s.prevX = null;
-      send({ type: 'DRAG_START' });
+  const onPointerDown = useCallback(() => {
+    const s = stateRef.current;
+    if (s.dragging) return;
+    s.dragging = true;
+    s.prevX = null;
+    send({ type: 'DRAG_START' });
 
-      if (!window.__TAURI_INTERNALS__) return;
+    if (!window.__TAURI_INTERNALS__) return;
 
-      import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-        getCurrentWindow().startDragging();
-      });
+    import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+      getCurrentWindow().startDragging();
+    });
 
-      function poll() {
-        if (!s.dragging) return;
-        import('@tauri-apps/api/window').then(({ cursorPosition }) =>
-          cursorPosition().then((pos) => {
-            if (s.prevX !== null) {
-              const dx = pos.x - s.prevX;
-              if (dx !== 0) send({ type: 'POINTER', dx });
-            }
-            s.prevX = pos.x;
-          }),
-        );
-        s.frameId = requestAnimationFrame(poll);
-      }
+    function poll() {
+      if (!s.dragging) return;
+      import('@tauri-apps/api/window').then(({ cursorPosition }) =>
+        cursorPosition().then((pos) => {
+          if (s.prevX !== null) {
+            const dx = pos.x - s.prevX;
+            if (dx !== 0) send({ type: 'POINTER', dx });
+          }
+          s.prevX = pos.x;
+        }),
+      );
       s.frameId = requestAnimationFrame(poll);
-    },
-  };
+    }
+    s.frameId = requestAnimationFrame(poll);
+  }, [send]);
+
+  return { onPointerDown };
 }
 
 export function useKeroPet(): {
