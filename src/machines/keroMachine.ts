@@ -1,3 +1,6 @@
+import { setup, assign } from 'xstate';
+import type { StateFrom } from 'xstate';
+
 export const CELL_WIDTH = 192;
 export const CELL_HEIGHT = 208;
 export const PET_SCALE = 0.5;
@@ -111,13 +114,143 @@ export function createInitialKeroContext(input?: KeroInput): KeroContext {
   };
 }
 
-// Interim snapshot type — replaced with StateFrom<typeof keroMachine> in Task 4
-interface KeroSnapshot {
-  value: string;
-  context: KeroContext;
+// --- Action helpers ---
+
+function applyBoundsContext(
+  context: KeroContext,
+  event: Extract<KeroEvent, { type: 'BOUNDS' }>,
+): Pick<KeroContext, 'bounds' | 'position'> {
+  return {
+    bounds: event.bounds,
+    position: pinToBottom(context.position, event.bounds),
+  };
 }
 
-export function selectSpriteFrame(snapshot: KeroSnapshot): KeroSpriteFrame {
+function advanceActionFrameContext(
+  context: KeroContext,
+  event: Extract<KeroEvent, { type: 'TICK' }>,
+): Partial<KeroContext> {
+  const elapsedMs = event.dt * 1000;
+  let actionIndex = context.actionIndex % ACTIONS.length;
+  let actionElapsedMs = context.actionElapsedMs + elapsedMs;
+
+  while (actionElapsedMs >= ACTIONS[actionIndex].durationMs) {
+    actionElapsedMs -= ACTIONS[actionIndex].durationMs;
+    actionIndex = (actionIndex + 1) % ACTIONS.length;
+  }
+
+  const action = ACTIONS[actionIndex];
+  const frameElapsed = context.frameElapsedMs + elapsedMs;
+  const steps = Math.floor(frameElapsed / action.frameMs);
+
+  return {
+    actionIndex,
+    actionElapsedMs,
+    frame: (context.frame + steps) % action.frames,
+    frameElapsedMs: frameElapsed % action.frameMs,
+    position: {
+      x: clampX(context.position.x + context.velocityX * event.dt, context.bounds),
+      y: bottomY(context.bounds),
+    },
+    velocityX: 0,
+    nowMs: context.nowMs + elapsedMs,
+  };
+}
+
+function advanceIdleFrameContext(
+  context: KeroContext,
+  event: Extract<KeroEvent, { type: 'TICK' }>,
+): Partial<KeroContext> {
+  const elapsedMs = event.dt * 1000;
+  const elapsed = context.frameElapsedMs + elapsedMs;
+  const steps = Math.floor(elapsed / IDLE_FRAME_MS);
+  return {
+    frame: (context.frame + steps) % 6,
+    frameElapsedMs: elapsed % IDLE_FRAME_MS,
+    position: { x: context.position.x, y: bottomY(context.bounds) },
+    nowMs: context.nowMs + elapsedMs,
+  };
+}
+
+function applyPointerVelocityContext(
+  context: KeroContext,
+  event: Extract<KeroEvent, { type: 'POINTER' }>,
+): Pick<KeroContext, 'velocityX' | 'facing'> {
+  const velocityX = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, event.dx * VELOCITY_SCALE));
+  return {
+    velocityX,
+    facing: event.dx > 0 ? 'right' : event.dx < 0 ? 'left' : context.facing,
+  };
+}
+
+// --- Machine ---
+
+export const keroMachine = setup({
+  types: {} as {
+    context: KeroContext;
+    events: KeroEvent;
+    input: KeroInput;
+  },
+  actions: {
+    applyBounds: assign(({ context, event }) =>
+      applyBoundsContext(context, event as Extract<KeroEvent, { type: 'BOUNDS' }>),
+    ),
+    resetPerformance: assign({
+      actionIndex: 0,
+      actionElapsedMs: 0,
+      frame: 0,
+      frameElapsedMs: 0,
+      velocityX: 0,
+    }),
+    settleAtBottom: assign(({ context }) => ({
+      position: { x: context.position.x, y: bottomY(context.bounds) },
+      velocityX: 0 as const,
+      pointer: null,
+      frame: 0,
+      frameElapsedMs: 0,
+    })),
+    advanceActionFrame: assign(({ context, event }) =>
+      advanceActionFrameContext(context, event as Extract<KeroEvent, { type: 'TICK' }>),
+    ),
+    advanceIdleFrame: assign(({ context, event }) =>
+      advanceIdleFrameContext(context, event as Extract<KeroEvent, { type: 'TICK' }>),
+    ),
+    applyPointerVelocity: assign(({ context, event }) =>
+      applyPointerVelocityContext(context, event as Extract<KeroEvent, { type: 'POINTER' }>),
+    ),
+  },
+}).createMachine({
+  id: 'kero',
+  context: ({ input }) => createInitialKeroContext(input),
+  on: {
+    BOUNDS: { actions: 'applyBounds' },
+  },
+  initial: 'performing',
+  states: {
+    performing: {
+      entry: { type: 'resetPerformance' },
+      on: {
+        TAP:     { target: 'resting' },
+        TICK:    { actions: 'advanceActionFrame' },
+        POINTER: { actions: 'applyPointerVelocity' },
+      },
+    },
+    resting: {
+      entry: { type: 'settleAtBottom' },
+      on: {
+        TAP:  { target: 'performing' },
+        TICK: { actions: 'advanceIdleFrame' },
+      },
+    },
+    looking: {
+      on: { TICK: { actions: 'advanceIdleFrame' } },
+    },
+  },
+});
+
+// --- selectSpriteFrame (uses StateFrom after machine is defined) ---
+
+export function selectSpriteFrame(snapshot: StateFrom<typeof keroMachine>): KeroSpriteFrame {
   const { value, context } = snapshot;
   if (value === 'looking' && context.pointer) {
     return directionToSpriteCell(pointerDegrees(context.pointer));
@@ -131,8 +264,3 @@ export function selectSpriteFrame(snapshot: KeroSnapshot): KeroSpriteFrame {
   }
   return { row: 0, column: context.frame % 6 };
 }
-
-// Suppress unused variable warnings for constants reserved for Task 4
-void VELOCITY_SCALE;
-void MAX_SPEED;
-void pinToBottom;
