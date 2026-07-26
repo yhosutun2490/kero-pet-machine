@@ -46,11 +46,36 @@ During drag, the OS owns the window position. If the machine also tried to updat
 
 ## Machine Changes (`keroMachine.ts`)
 
+### Running animation sprite rows
+
+| Row | Direction | Frames | Frame timing |
+|-----|-----------|--------|-------------|
+| 1 | Right | 8 | 80 ms |
+| 2 | Left | 8 | 80 ms |
+
+Direction is chosen from `context.facing`. No CSS `scaleX(-1)` flip is applied during `dragging` because rows 1 and 2 are already directional.
+
+### New constants
+
+```ts
+const RUN_FRAMES = 8;
+const RUN_FRAME_MS = 80;
+```
+
 ### New state: `dragging`
 
-- **TICK**: advance animation frames (same as `performing`), but do NOT update `position` or `velocityX`
-- **POINTER**: update `facing` and `velocityX` for animation direction
+- **TICK**: advance run animation frames using `RUN_FRAME_MS` timing; do NOT update `position` or `velocityX`
+- **POINTER**: update `facing` for run row selection
 - **DRAG_END**: transition to `performing`
+
+### `selectSpriteFrame` — dragging case
+
+```ts
+if (value === 'dragging') {
+  const row = context.facing === 'left' ? 2 : 1;
+  return { row, column: context.frame % RUN_FRAMES };
+}
+```
 
 ### New events
 
@@ -107,6 +132,17 @@ The Tauri window is 96×104 px. The cursor leaves the webview boundary almost im
 ### `useTauriPositionSync` — no changes needed
 
 In `dragging` state, machine `position` is frozen. The effect dependency `[position.x, position.y]` never fires during drag, so no `setPosition` calls fight the OS.
+
+### `spriteStyle` transform — no flip during drag
+
+Rows 1 and 2 are already directional, so `scaleX(-1)` must NOT be applied in the `dragging` state:
+
+```ts
+const isDragging = snapshot.value === 'dragging';
+transform: (facing === 'left' && !isDragging)
+  ? `translateX(${CELL_WIDTH * PET_SCALE}px) scale(${PET_SCALE}) scaleX(-1)`
+  : `scale(${PET_SCALE})`,
+```
 
 ### `useKeroPet` return type
 
