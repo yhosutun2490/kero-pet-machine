@@ -168,6 +168,17 @@ describe('dragging state', () => {
     expect(actor.getSnapshot().value).toBe('dragging');
   });
 
+  it('resets frame to 0 when entering dragging state', () => {
+    const actor = createActor(keroMachine, {
+      input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
+    }).start();
+    // Advance frame in performing state
+    actor.send({ type: 'TICK', dt: 0.17 }); // 170ms / 160ms = 1 step → frame=1
+    expect(actor.getSnapshot().context.frame).toBe(1); // guard: confirm frame advanced
+    actor.send({ type: 'DRAG_START' });
+    expect(actor.getSnapshot().context.frame).toBe(0); // must reset on entry
+  });
+
   it('TICK in dragging advances animation frame but leaves position unchanged', () => {
     const actor = createActor(keroMachine, {
       input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },

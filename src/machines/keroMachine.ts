@@ -239,6 +239,10 @@ export const keroMachine = setup({
     advanceIdleFrame: assign(({ context, event }) =>
       advanceIdleFrameContext(context, event as Extract<KeroEvent, { type: 'TICK' }>),
     ),
+    resetDragFrame: assign({
+      frame: 0,
+      frameElapsedMs: 0,
+    }),
     applyPointerVelocity: assign(({ context, event }) =>
       applyPointerVelocityContext(context, event as Extract<KeroEvent, { type: 'POINTER' }>),
     ),
@@ -270,6 +274,7 @@ export const keroMachine = setup({
       },
     },
     dragging: {
+      entry: { type: 'resetDragFrame' },
       on: {
         TICK:     { actions: 'advanceDragFrame' },
         POINTER:  { actions: 'applyPointerVelocity' },
