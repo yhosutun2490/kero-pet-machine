@@ -239,6 +239,20 @@ describe('dragging state', () => {
     expect(s.context.position.y).toBe(200);
   });
 
+  it('TICK in performing preserves dropped Y after drag', () => {
+    const actor = createActor(keroMachine, {
+      input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
+    }).start();
+    actor.send({ type: 'DRAG_START' });
+    actor.send({ type: 'POSITION_SYNC', position: { x: 300, y: 200 } });
+    actor.send({ type: 'DRAG_END' });
+    actor.send({ type: 'TICK', dt: 1 / 60 });
+    const s = actor.getSnapshot();
+    expect(s.value).toBe('performing');
+    expect(s.context.position.x).toBe(300);
+    expect(s.context.position.y).toBe(200); // must NOT snap to bottomY (496)
+  });
+
   it('selectSpriteFrame returns run-right row when dragging facing right', () => {
     const actor = createActor(keroMachine, {
       input: { bounds: { width: 800, height: 600 }, position: { x: 100, y: 496 } },
