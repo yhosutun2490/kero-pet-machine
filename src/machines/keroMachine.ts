@@ -8,6 +8,8 @@ export const PET_WINDOW_WIDTH = CELL_WIDTH * PET_SCALE;
 export const PET_WINDOW_HEIGHT = CELL_HEIGHT * PET_SCALE;
 
 const IDLE_FRAME_MS = 160;
+const RUN_FRAMES = 8;
+const RUN_FRAME_MS = 80;
 const VELOCITY_SCALE = 60;
 const MAX_SPEED = 300;
 
@@ -178,23 +180,11 @@ function advanceDragFrameContext(
   event: Extract<KeroEvent, { type: 'TICK' }>,
 ): Partial<KeroContext> {
   const elapsedMs = event.dt * 1000;
-  let actionIndex = context.actionIndex % ACTIONS.length;
-  let actionElapsedMs = context.actionElapsedMs + elapsedMs;
-
-  while (actionElapsedMs >= ACTIONS[actionIndex].durationMs) {
-    actionElapsedMs -= ACTIONS[actionIndex].durationMs;
-    actionIndex = (actionIndex + 1) % ACTIONS.length;
-  }
-
-  const action = ACTIONS[actionIndex];
   const frameElapsed = context.frameElapsedMs + elapsedMs;
-  const steps = Math.floor(frameElapsed / action.frameMs);
-
+  const steps = Math.floor(frameElapsed / RUN_FRAME_MS);
   return {
-    actionIndex,
-    actionElapsedMs,
-    frame: (context.frame + steps) % action.frames,
-    frameElapsedMs: frameElapsed % action.frameMs,
+    frame: (context.frame + steps) % RUN_FRAMES,
+    frameElapsedMs: frameElapsed % RUN_FRAME_MS,
     nowMs: context.nowMs + elapsedMs,
   };
 }
@@ -301,6 +291,10 @@ export function selectSpriteFrame(snapshot: StateFrom<typeof keroMachine>): Kero
   }
   if (value === 'resting') {
     return { row: 5, column: 4 };
+  }
+  if (value === 'dragging') {
+    const row = context.facing === 'left' ? 2 : 1;
+    return { row, column: context.frame % RUN_FRAMES };
   }
   if (value === 'performing') {
     const action = ACTIONS[context.actionIndex % ACTIONS.length];
