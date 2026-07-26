@@ -27,7 +27,7 @@ function useTauriSetup(send: Send): void {
 
     async function connect() {
       if (!window.__TAURI_INTERNALS__) return;
-      const [{ getCurrentWindow, currentMonitor }, { getCurrentWebview }] = await Promise.all([
+      const [{ getCurrentWindow, availableMonitors }, { getCurrentWebview }] = await Promise.all([
         import('@tauri-apps/api/window'),
         import('@tauri-apps/api/webview'),
       ]);
@@ -40,9 +40,14 @@ function useTauriSetup(send: Send): void {
         webview.setBackgroundColor([0, 0, 0, 0]),
       ]);
 
-      const monitor = await currentMonitor();
-      const width = monitor?.workArea?.size?.width ?? 900;
-      const height = monitor?.workArea?.size?.height ?? 600;
+      const monitors = await availableMonitors();
+      let width = 900, height = 600;
+      for (const m of monitors) {
+        const right = (m.position?.x ?? 0) + (m.size?.width ?? 0);
+        const bottom = (m.position?.y ?? 0) + (m.size?.height ?? 0);
+        if (right > width) width = right;
+        if (bottom > height) height = bottom;
+      }
       send({ type: 'BOUNDS', bounds: { width, height } });
     }
 
