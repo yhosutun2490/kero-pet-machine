@@ -171,11 +171,12 @@ export function useKeroPet(): {
       height: CELL_HEIGHT,
       backgroundImage: 'url("/kerolet-spritesheet.webp")',
       backgroundPosition: `-${spriteFrame.column * CELL_WIDTH}px -${spriteFrame.row * CELL_HEIGHT}px`,
-      transform: facing === 'left'
-        ? `translateX(${CELL_WIDTH * PET_SCALE}px) scale(${PET_SCALE}) scaleX(-1)`
-        : `scale(${PET_SCALE})`,
+      transform:
+        facing === 'left' && snapshot.value !== 'dragging'
+          ? `translateX(${CELL_WIDTH * PET_SCALE}px) scale(${PET_SCALE}) scaleX(-1)`
+          : `scale(${PET_SCALE})`,
     }),
-    [spriteFrame.column, spriteFrame.row, facing],
+    [spriteFrame.column, spriteFrame.row, facing, snapshot.value],
   );
 
   const containerStyle = useMemo<CSSProperties>(
