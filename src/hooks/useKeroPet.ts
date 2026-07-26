@@ -51,11 +51,9 @@ function useTauriSetup(send: Send): void {
   }, [send]);
 }
 
-// rAF loop: sends TICK every frame. Also fire-and-forget polls cursorPosition()
-// to send POINTER with dx to the machine.
+// rAF loop: sends TICK every frame.
 function useRafTick(send: Send): void {
   const lastTickRef = useRef(performance.now());
-  const prevCursorRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     let frameId = 0;
@@ -63,20 +61,6 @@ function useRafTick(send: Send): void {
     function tick(now: number) {
       const dt = Math.min(0.05, (now - lastTickRef.current) / 1000);
       lastTickRef.current = now;
-
-      if (window.__TAURI_INTERNALS__) {
-        import('@tauri-apps/api/window').then(({ cursorPosition }) => {
-          cursorPosition().then((pos) => {
-            const prev = prevCursorRef.current;
-            if (prev) {
-              const dx = pos.x - prev.x;
-              if (dx !== 0) send({ type: 'POINTER', dx });
-            }
-            prevCursorRef.current = { x: pos.x, y: pos.y };
-          });
-        });
-      }
-
       send({ type: 'TICK', dt });
       frameId = requestAnimationFrame(tick);
     }
@@ -100,16 +84,82 @@ function useTauriPositionSync(position: { x: number; y: number }): void {
   }, [position.x, position.y]);
 }
 
+// Handles pointer-down drag: calls startDragging(), polls cursorPosition() for
+// animation direction, reads outerPosition() on release to sync machine state.
+function useDragTracking(send: Send): { onPointerDown: () => void } {
+  const stateRef = useRef({ dragging: false, prevX: null as number | null, frameId: 0 });
+
+  useEffect(() => {
+    const s = stateRef.current;
+
+    // Preload Tauri module so first drag has no cold-import delay.
+    if (window.__TAURI_INTERNALS__) {
+      import('@tauri-apps/api/window');
+    }
+
+    async function onPointerUp() {
+      if (!s.dragging) return;
+      s.dragging = false;
+      cancelAnimationFrame(s.frameId);
+      s.prevX = null;
+      if (window.__TAURI_INTERNALS__) {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const pos = await getCurrentWindow().outerPosition();
+        send({ type: 'POSITION_SYNC', position: { x: pos.x, y: pos.y } });
+      }
+      send({ type: 'DRAG_END' });
+    }
+
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointerup', onPointerUp);
+      cancelAnimationFrame(s.frameId);
+    };
+  }, [send]);
+
+  return {
+    onPointerDown: () => {
+      const s = stateRef.current;
+      s.dragging = true;
+      s.prevX = null;
+      send({ type: 'DRAG_START' });
+
+      if (!window.__TAURI_INTERNALS__) return;
+
+      import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+        getCurrentWindow().startDragging();
+      });
+
+      function poll() {
+        if (!s.dragging) return;
+        import('@tauri-apps/api/window').then(({ cursorPosition }) =>
+          cursorPosition().then((pos) => {
+            if (s.prevX !== null) {
+              const dx = pos.x - s.prevX;
+              if (dx !== 0) send({ type: 'POINTER', dx });
+            }
+            s.prevX = pos.x;
+          }),
+        );
+        s.frameId = requestAnimationFrame(poll);
+      }
+      s.frameId = requestAnimationFrame(poll);
+    },
+  };
+}
+
 export function useKeroPet(): {
   spriteStyle: CSSProperties;
   containerStyle: CSSProperties;
   onTap: () => void;
+  onPointerDown: () => void;
 } {
   const [snapshot, send] = useMachine(keroMachine, { input: {} });
 
   useTauriSetup(send);
   useRafTick(send);
   useTauriPositionSync(snapshot.context.position);
+  const { onPointerDown } = useDragTracking(send);
 
   const spriteFrame = selectSpriteFrame(snapshot);
   const facing = snapshot.context.facing;
@@ -121,7 +171,7 @@ export function useKeroPet(): {
       backgroundImage: 'url("/kerolet-spritesheet.webp")',
       backgroundPosition: `-${spriteFrame.column * CELL_WIDTH}px -${spriteFrame.row * CELL_HEIGHT}px`,
       transform: facing === 'left'
-        ? `scale(${PET_SCALE}) scaleX(-1)`
+        ? `translateX(${CELL_WIDTH * PET_SCALE}px) scale(${PET_SCALE}) scaleX(-1)`
         : `scale(${PET_SCALE})`,
     }),
     [spriteFrame.column, spriteFrame.row, facing],
@@ -136,5 +186,6 @@ export function useKeroPet(): {
     spriteStyle,
     containerStyle,
     onTap: () => send({ type: 'TAP' }),
+    onPointerDown,
   };
 }
