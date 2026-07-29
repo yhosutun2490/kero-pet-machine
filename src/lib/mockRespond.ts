@@ -44,7 +44,7 @@ function hashIndex(text: string, poolSize: number): number {
 }
 
 export function mockRespond(userText: string, language: 'en' | 'es'): string {
-  const pool = RESPONSES[language];
+  const pool = RESPONSES[language] ?? RESPONSES['en'];
   const index = userText.length > 0 ? hashIndex(userText, pool.length) : 0;
   return pool[index];
 }
