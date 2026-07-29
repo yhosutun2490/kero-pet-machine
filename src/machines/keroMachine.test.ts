@@ -307,3 +307,36 @@ describe('directionToSpriteCell', () => {
     expect(directionToSpriteCell(337)).toEqual({ row: 10, column: 7, label: '337.5' });
   });
 });
+
+describe('CHAT_OPEN / CHAT_CLOSE', () => {
+  it('CHAT_OPEN from performing transitions to looking', () => {
+    const actor = createActor(keroMachine, { input: {} }).start();
+    expect(actor.getSnapshot().value).toBe('performing');
+    actor.send({ type: 'CHAT_OPEN' });
+    expect(actor.getSnapshot().value).toBe('looking');
+  });
+
+  it('CHAT_OPEN from resting transitions to looking', () => {
+    const actor = createActor(keroMachine, { input: {} }).start();
+    actor.send({ type: 'TAP' }); // → resting
+    expect(actor.getSnapshot().value).toBe('resting');
+    actor.send({ type: 'CHAT_OPEN' });
+    expect(actor.getSnapshot().value).toBe('looking');
+  });
+
+  it('CHAT_CLOSE from looking transitions to performing', () => {
+    const actor = createActor(keroMachine, { input: {} }).start();
+    actor.send({ type: 'CHAT_OPEN' }); // → looking
+    expect(actor.getSnapshot().value).toBe('looking');
+    actor.send({ type: 'CHAT_CLOSE' });
+    expect(actor.getSnapshot().value).toBe('performing');
+  });
+
+  it('DRAG_START from looking transitions to dragging', () => {
+    const actor = createActor(keroMachine, { input: {} }).start();
+    actor.send({ type: 'CHAT_OPEN' }); // → looking
+    expect(actor.getSnapshot().value).toBe('looking');
+    actor.send({ type: 'DRAG_START' });
+    expect(actor.getSnapshot().value).toBe('dragging');
+  });
+});
