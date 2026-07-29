@@ -63,7 +63,67 @@ Tauri v2 的權限系統預設禁止所有命令。`core:webview:default`（以�
 
 ---
 
-## 3. 確認可用權限名稱的方法
+## 3. macOS 麥克風權限：需要 Info.plist + getUserMedia
+
+### 症狀
+
+點擊麥克風按鈕後沒有出現 macOS 系統授權對話框，或 Web Speech API 直接回傳 `not-allowed` 錯誤。
+
+### 原因
+
+macOS 要求 app 的 `Info.plist` 必須包含 `NSMicrophoneUsageDescription` 才會顯示系統授權對話框。沒有這個 key，系統會靜默拒絕麥克風請求，不顯示任何提示。
+
+### 解法 1：建立 `src-tauri/Info.plist`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Kero 需要麥克風來進行對話練習。</string>
+</dict>
+</plist>
+```
+
+`tauri.conf.json` 用檔案路徑字串指向它（**不是** inline 物件）：
+
+```json
+"bundle": {
+  "macOS": {
+    "infoPlist": "Info.plist"
+  }
+}
+```
+
+> ⚠️ `infoPlist` 型別是 `string | null`，填入 JSON 物件會導致 build 錯誤：
+> `"... is not of types 'null', 'string'"`
+
+### 解法 2：用 `getUserMedia` 主動觸發 OS 對話框
+
+Web Speech API 在 WKWebView（macOS Tauri WebView）裡不一定能可靠觸發系統權限提示。改用 `navigator.mediaDevices.getUserMedia` 更穩定：
+
+```ts
+const handleMicClick = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // 權限已取得 — 立刻停止 stream，讓 Speech Recognition 自行開麥克風
+    stream.getTracks().forEach((t) => t.stop());
+  } catch {
+    setMicError(
+      '無法存取麥克風。請前往「系統設定 → 隱私權與安全性 → 麥克風」，允許 Kero 使用麥克風。'
+    );
+    return;
+  }
+  startRecognition();
+};
+```
+
+兩個解法必須同時使用：`NSMicrophoneUsageDescription` 讓 macOS 允許彈出授權對話框，`getUserMedia` 則是實際觸發它的呼叫。
+
+---
+
+## 4. 確認可用權限名稱的方法
 
 Tauri v2 的所有有效 permission identifier 都列在：
 
@@ -82,5 +142,7 @@ grep -o '"const": "core:[^"]*"' src-tauri/gen/schemas/desktop-schema.json | sort
 ## 相關檔案
 
 - `src-tauri/capabilities/default.json` — 應用程式的 capability 設定
+- `src-tauri/Info.plist` — macOS 系統權限說明（NSMicrophoneUsageDescription 等）
 - `src/hooks/useKeroPet.ts` — Tauri API 整合（視窗、拖曳、選單）
+- `src/ChatboardApp.tsx` — 麥克風權限請求與 Web Speech API 整合
 - `docs/animation-sync.md` — 拖曳與位置同步的實作細節
