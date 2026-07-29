@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { useKeroPet } from './hooks/useKeroPet';
 
 interface MenuPosition {
@@ -23,6 +24,13 @@ export default function App() {
 
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
+  }, [menu]);
+
+  // Auto-focus first menu item when menu opens
+  useEffect(() => {
+    if (!menu) return;
+    const firstItem = menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]');
+    firstItem?.focus();
   }, [menu]);
 
   function handleContextMenu(e: React.MouseEvent) {
@@ -65,7 +73,16 @@ export default function App() {
         >
           <li
             role="menuitem"
+            tabIndex={0}
             onClick={handleOpenChatboard}
+            onKeyDown={(e: KeyboardEvent<HTMLLIElement>) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleOpenChatboard();
+              } else if (e.key === 'Escape') {
+                setMenu(null);
+              }
+            }}
             style={{
               padding: '6px 16px',
               cursor: 'pointer',

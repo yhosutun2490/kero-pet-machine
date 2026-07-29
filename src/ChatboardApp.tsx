@@ -9,16 +9,15 @@ declare global {
 export default function ChatboardApp() {
   useEffect(() => {
     if (!window.__TAURI_INTERNALS__) return;
+    let cleanup: (() => void) | null = null;
 
-    // Eagerly import emit so it's ready before beforeunload fires
-    let emitFn: ((event: string) => Promise<void>) | null = null;
-    import('@tauri-apps/api/event').then(({ emit }) => { emitFn = emit; });
+    import('@tauri-apps/api/event').then(({ emit }) => {
+      const handle = () => { emit('chat-closed'); };
+      window.addEventListener('beforeunload', handle);
+      cleanup = () => window.removeEventListener('beforeunload', handle);
+    });
 
-    // Emit chat-closed when the window is about to unload
-    const handleBeforeUnload = () => { emitFn?.('chat-closed'); };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    return () => { cleanup?.(); };
   }, []);
 
   return (
