@@ -11,6 +11,7 @@ export type ChatEvent =
   | { type: 'SELECT_LANGUAGE'; lang: 'en' | 'es' }
   | { type: 'TAP_MIC' }
   | { type: 'SPEECH_RESULT'; text: string }
+  | { type: 'SPEECH_CANCEL' }
   | { type: 'RESPONSE_READY'; text: string }
   | { type: 'SPEECH_END' };
 
@@ -85,6 +86,7 @@ export const chatMachine = setup({
           target: 'processing',
           actions: 'appendUserMessage',
         },
+        SPEECH_CANCEL: { target: 'idle' },
       },
     },
     processing: {

@@ -158,6 +158,28 @@ describe('full conversation loop', () => {
   });
 });
 
+describe('SPEECH_CANCEL', () => {
+  it('transitions from listening back to idle', () => {
+    const actor = createActor(chatMachine).start();
+    actor.send({ type: 'SELECT_LANGUAGE', lang: 'en' });
+    actor.send({ type: 'SPEECH_END' });
+    actor.send({ type: 'TAP_MIC' });
+    expect(actor.getSnapshot().value).toBe('listening');
+    actor.send({ type: 'SPEECH_CANCEL' });
+    expect(actor.getSnapshot().value).toBe('idle');
+  });
+
+  it('does not change messages when cancelled', () => {
+    const actor = createActor(chatMachine).start();
+    actor.send({ type: 'SELECT_LANGUAGE', lang: 'en' });
+    actor.send({ type: 'SPEECH_END' });
+    const messagesBefore = actor.getSnapshot().context.messages.length;
+    actor.send({ type: 'TAP_MIC' });
+    actor.send({ type: 'SPEECH_CANCEL' });
+    expect(actor.getSnapshot().context.messages.length).toBe(messagesBefore);
+  });
+});
+
 describe('currentUtterance is set on speaking entry', () => {
   it('is set by SELECT_LANGUAGE and later by RESPONSE_READY', () => {
     const actor = createActor(chatMachine).start();

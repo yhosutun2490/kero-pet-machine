@@ -104,10 +104,13 @@ export default function ChatboardApp() {
     recognition.continuous = false;
     recognitionRef.current = recognition;
 
+    let finalReceived = false;
+
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       const last = event.results[event.results.length - 1];
       const text = last[0].transcript;
       if (last.isFinal) {
+        finalReceived = true;
         setInterimText('');
         send({ type: 'SPEECH_RESULT', text });
       } else {
@@ -118,6 +121,11 @@ export default function ChatboardApp() {
     recognition.onend = () => {
       setInterimText('');
       recognitionRef.current = null;
+      // If recognition ended without a final result, machine is stuck in
+      // 'listening'. Send SPEECH_CANCEL so the user can try again.
+      if (!finalReceived) {
+        send({ type: 'SPEECH_CANCEL' });
+      }
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
@@ -127,6 +135,7 @@ export default function ChatboardApp() {
           '無法存取麥克風。請前往「系統設定 → 隱私權與安全性 → 麥克風」，允許 Kero 使用麥克風。'
         );
       }
+      // onerror is always followed by onend, which sends SPEECH_CANCEL.
       setInterimText('');
       recognitionRef.current = null;
     };
@@ -156,8 +165,10 @@ export default function ChatboardApp() {
     // Web Speech API alone may not reliably trigger the system prompt in WKWebView.
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Permission granted — stop the stream immediately; recognition opens its own.
       stream.getTracks().forEach((t) => t.stop());
+      // Wait for the OS to fully release the mic before SpeechRecognition
+      // tries to acquire it — without this delay recognition gets no audio.
+      await new Promise((resolve) => setTimeout(resolve, 300));
       setMicError(null);
     } catch {
       setMicError(
