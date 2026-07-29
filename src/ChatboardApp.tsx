@@ -10,12 +10,12 @@ export default function ChatboardApp() {
   useEffect(() => {
     if (!window.__TAURI_INTERNALS__) return;
 
+    // Eagerly import emit so it's ready before beforeunload fires
+    let emitFn: ((event: string) => Promise<void>) | null = null;
+    import('@tauri-apps/api/event').then(({ emit }) => { emitFn = emit; });
+
     // Emit chat-closed when the window is about to unload
-    const handleBeforeUnload = () => {
-      import('@tauri-apps/api/event').then(({ emit }) => {
-        emit('chat-closed');
-      });
-    };
+    const handleBeforeUnload = () => { emitFn?.('chat-closed'); };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
