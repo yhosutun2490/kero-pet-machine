@@ -35,6 +35,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": []
+    "icon": [],
+    "macOS": {
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Kero 需要麥克風來進行對話練習。"
+      }
+    }
   }
 }

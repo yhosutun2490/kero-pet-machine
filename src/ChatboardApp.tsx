@@ -123,7 +123,9 @@ export default function ChatboardApp() {
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       console.warn('Speech recognition error:', event.error);
       if (event.error === 'not-allowed') {
-        setMicError('麥克風權限被拒絕，請在瀏覽器設定中允許麥克風存取。');
+        setMicError(
+          '無法存取麥克風。請前往「系統設定 → 隱私權與安全性 → 麥克風」，允許 Kero 使用麥克風。'
+        );
       }
       setInterimText('');
       recognitionRef.current = null;
@@ -149,10 +151,23 @@ export default function ChatboardApp() {
 
   const micDisabled = isSpeaking || isProcessing || isListening;
 
-  const handleMicClick = () => {
+  const handleMicClick = useCallback(async () => {
+    // Use getUserMedia to trigger the OS microphone permission dialog first.
+    // Web Speech API alone may not reliably trigger the system prompt in WKWebView.
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Permission granted — stop the stream immediately; recognition opens its own.
+      stream.getTracks().forEach((t) => t.stop());
+      setMicError(null);
+    } catch {
+      setMicError(
+        '無法存取麥克風。請前往「系統設定 → 隱私權與安全性 → 麥克風」，允許 Kero 使用麥克風。'
+      );
+      return;
+    }
     send({ type: 'TAP_MIC' });
     startRecognition();
-  };
+  }, [send, startRecognition]);
 
   const handleFallbackSubmit = () => {
     if (!fallbackText.trim()) return;
