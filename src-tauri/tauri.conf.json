@@ -37,9 +37,7 @@
     "targets": "all",
     "icon": [],
     "macOS": {
-      "infoPlist": {
-        "NSMicrophoneUsageDescription": "Kero 需要麥克風來進行對話練習。"
-      }
+      "infoPlist": "Info.plist"
     }
   }
 }
