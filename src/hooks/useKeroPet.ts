@@ -160,8 +160,8 @@ function useDragTracking(send: Send): { onPointerDown: () => void } {
 
 // Opens chatboard window (single-window guard: re-focuses if already open).
 // Emits CHAT_OPEN to keroMachine. Listens for 'chat-closed' event from chatboard
-// and emits CHAT_CLOSE.
-function useChatboard(send: Send): { onChatOpen: () => void } {
+// and emits CHAT_CLOSE. Exposes onContextMenu which shows a native OS context menu.
+function useChatboard(send: Send): { onContextMenu: (e: React.MouseEvent) => void } {
   useEffect(() => {
     if (!window.__TAURI_INTERNALS__) return;
 
@@ -176,7 +176,7 @@ function useChatboard(send: Send): { onChatOpen: () => void } {
     return () => { unlisten?.(); };
   }, [send]);
 
-  const onChatOpen = useCallback(async () => {
+  const openChatboard = useCallback(async () => {
     send({ type: 'CHAT_OPEN' });
 
     if (!window.__TAURI_INTERNALS__) return;
@@ -199,7 +199,28 @@ function useChatboard(send: Send): { onChatOpen: () => void } {
     });
   }, [send]);
 
-  return { onChatOpen };
+  const onContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+
+    if (!window.__TAURI_INTERNALS__) {
+      // Browser dev mode: open chatboard directly (no native menu available).
+      openChatboard();
+      return;
+    }
+
+    // Use Tauri's native OS context menu so it renders outside the 96×104px
+    // window boundary and isn't clipped by the WebView.
+    import('@tauri-apps/api/menu').then(async ({ Menu, MenuItem }) => {
+      const menu = await Menu.new({
+        items: [
+          await MenuItem.new({ id: 'chat-practice', text: '對話練習', action: openChatboard }),
+        ],
+      });
+      await menu.popup();
+    });
+  }, [openChatboard]);
+
+  return { onContextMenu };
 }
 
 export function useKeroPet(): {
@@ -207,7 +228,7 @@ export function useKeroPet(): {
   containerStyle: CSSProperties;
   onTap: () => void;
   onPointerDown: () => void;
-  onChatOpen: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 } {
   const [snapshot, send] = useMachine(keroMachine, { input: {} });
 
@@ -215,7 +236,7 @@ export function useKeroPet(): {
   useRafTick(send);
   useTauriPositionSync(snapshot.context.position);
   const { onPointerDown } = useDragTracking(send);
-  const { onChatOpen } = useChatboard(send);
+  const { onContextMenu } = useChatboard(send);
 
   const spriteFrame = selectSpriteFrame(snapshot);
   const facing = snapshot.context.facing;
@@ -244,6 +265,6 @@ export function useKeroPet(): {
     containerStyle,
     onTap: () => send({ type: 'TAP' }),
     onPointerDown,
-    onChatOpen,
+    onContextMenu,
   };
 }
