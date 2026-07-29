@@ -3,6 +3,7 @@ import { setup, assign } from 'xstate';
 export interface ChatContext {
   language: 'en' | 'es' | null;
   messages: { role: 'kero' | 'user'; text: string }[];
+  // Persists through idle/listening so UI can display the last utterance
   currentUtterance: string;
 }
 
@@ -34,10 +35,10 @@ export const chatMachine = setup({
   actions: {
     setLanguageAndGreet: assign(({ event }) => {
       const e = event as Extract<ChatEvent, { type: 'SELECT_LANGUAGE' }>;
-      const text = OPENING_LINES[e.lang];
+      const text = OPENING_LINES[e.lang] ?? '';
       return {
         language: e.lang,
-        currentUtterance: text,
+        currentUtterance: OPENING_LINES[e.lang] ?? '',
         messages: [{ role: 'kero' as const, text }],
       };
     }),

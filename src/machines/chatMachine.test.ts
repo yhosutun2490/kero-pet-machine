@@ -64,6 +64,14 @@ describe('TAP_MIC', () => {
     actor.send({ type: 'TAP_MIC' });
     expect(actor.getSnapshot().value).toBe('selectingLanguage');
   });
+
+  it('TAP_MIC during speaking is silently ignored', () => {
+    const actor = createActor(chatMachine).start();
+    actor.send({ type: 'SELECT_LANGUAGE', lang: 'en' });
+    expect(actor.getSnapshot().value).toBe('speaking'); // guard
+    actor.send({ type: 'TAP_MIC' }); // should be ignored
+    expect(actor.getSnapshot().value).toBe('speaking');
+  });
 });
 
 describe('SPEECH_RESULT', () => {
