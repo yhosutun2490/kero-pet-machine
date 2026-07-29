@@ -36,15 +36,16 @@ export default function ChatboardApp() {
     const language = snapshot.context.language;
     if (!text || !language) return;
 
+    const LANG_CODES: Record<'en' | 'es', string> = { en: 'en-US', es: 'es-ES' };
     const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = language === 'en' ? 'en-US' : 'es-ES';
+    utter.lang = LANG_CODES[language];
     utter.onend = () => send({ type: 'SPEECH_END' });
     speechSynthesis.speak(utter);
 
     return () => {
       speechSynthesis.cancel();
     };
-  }, [snapshot.value, snapshot.context.currentUtterance]);
+  }, [snapshot.value, snapshot.context.currentUtterance, send]);
 
   // Auto-scroll transcript to bottom when messages change
   useEffect(() => {
@@ -53,6 +54,7 @@ export default function ChatboardApp() {
 
   const isSpeaking = snapshot.value === 'speaking';
   const isProcessing = snapshot.value === 'processing';
+  // idle stays disabled until Task 06 wires up STT
   const micDisabled = isSpeaking || isProcessing || snapshot.value === 'idle';
 
   return (
