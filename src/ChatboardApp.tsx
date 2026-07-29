@@ -30,6 +30,8 @@ export default function ChatboardApp() {
   const [interimText, setInterimText] = useState('');
   // Text input fallback (when STT is not supported)
   const [fallbackText, setFallbackText] = useState('');
+  // Mic permission / recognition error message
+  const [micError, setMicError] = useState<string | null>(null);
 
   // Emit chat-closed on window unload (keep existing logic)
   useEffect(() => {
@@ -104,11 +106,16 @@ export default function ChatboardApp() {
       recognitionRef.current = null;
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.warn('Speech recognition error:', event.error);
+      if (event.error === 'not-allowed') {
+        setMicError('麥克風權限被拒絕，請在瀏覽器設定中允許麥克風存取。');
+      }
       setInterimText('');
       recognitionRef.current = null;
     };
 
+    setMicError(null);
     recognition.start();
   }, [snapshot.context.language, send]);
 
@@ -208,7 +215,11 @@ export default function ChatboardApp() {
           </ScrollArea>
 
           {/* Control bar */}
-          <div className="flex items-center justify-center px-4 py-3 border-t border-border shrink-0 gap-3">
+          <div className="flex flex-col items-center border-t border-border shrink-0">
+          {micError ? (
+            <p className="text-xs text-red-500 px-4 pt-2">{micError}</p>
+          ) : null}
+          <div className="flex items-center justify-center px-4 py-3 gap-3 w-full">
             {STT_SUPPORTED ? (
               <Button
                 size="icon-lg"
@@ -217,13 +228,7 @@ export default function ChatboardApp() {
                 aria-label="按下說話"
                 aria-pressed={isListening}
                 onClick={handleMicClick}
-                className={
-                  isListening
-                    ? 'ring-2 ring-red-500 ring-offset-2 text-red-500'
-                    : isIdle
-                    ? ''
-                    : ''
-                }
+                className={isListening ? 'ring-2 ring-red-500 ring-offset-2 text-red-500' : ''}
               >
                 🎤
               </Button>
@@ -250,6 +255,7 @@ export default function ChatboardApp() {
                 </Button>
               </>
             )}
+          </div>
           </div>
         </>
       )}
