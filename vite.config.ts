@@ -16,4 +16,12 @@ export default defineConfig({
     strictPort: true,
   },
   clearScreen: false,
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        chatboard: resolve(__dirname, 'chatboard.html'),
+      },
+    },
+  },
 });

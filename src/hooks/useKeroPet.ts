@@ -12,6 +12,8 @@ import {
 } from '../machines/keroMachine';
 import type { KeroEvent } from '../machines/keroMachine';
 
+const CHATBOARD_LABEL = 'chatboard';
+
 declare global {
   interface Window {
     __TAURI_INTERNALS__?: unknown;
@@ -156,11 +158,56 @@ function useDragTracking(send: Send): { onPointerDown: () => void } {
   return { onPointerDown };
 }
 
+// Opens chatboard window (single-window guard: re-focuses if already open).
+// Emits CHAT_OPEN to keroMachine. Listens for 'chat-closed' event from chatboard
+// and emits CHAT_CLOSE.
+function useChatboard(send: Send): { onChatOpen: () => void } {
+  useEffect(() => {
+    if (!window.__TAURI_INTERNALS__) return;
+
+    let unlisten: (() => void) | null = null;
+
+    import('@tauri-apps/api/event').then(({ listen }) => {
+      listen('chat-closed', () => {
+        send({ type: 'CHAT_CLOSE' });
+      }).then((fn) => { unlisten = fn; });
+    });
+
+    return () => { unlisten?.(); };
+  }, [send]);
+
+  const onChatOpen = useCallback(async () => {
+    send({ type: 'CHAT_OPEN' });
+
+    if (!window.__TAURI_INTERNALS__) return;
+
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+
+    // If a chatboard window already exists, focus it instead of creating another.
+    const existing = await WebviewWindow.getByLabel(CHATBOARD_LABEL);
+    if (existing) {
+      await existing.setFocus();
+      return;
+    }
+
+    new WebviewWindow(CHATBOARD_LABEL, {
+      url: '/chatboard.html',
+      title: 'Kero 對話練習',
+      width: 400,
+      height: 550,
+      resizable: true,
+    });
+  }, [send]);
+
+  return { onChatOpen };
+}
+
 export function useKeroPet(): {
   spriteStyle: CSSProperties;
   containerStyle: CSSProperties;
   onTap: () => void;
   onPointerDown: () => void;
+  onChatOpen: () => void;
 } {
   const [snapshot, send] = useMachine(keroMachine, { input: {} });
 
@@ -168,6 +215,7 @@ export function useKeroPet(): {
   useRafTick(send);
   useTauriPositionSync(snapshot.context.position);
   const { onPointerDown } = useDragTracking(send);
+  const { onChatOpen } = useChatboard(send);
 
   const spriteFrame = selectSpriteFrame(snapshot);
   const facing = snapshot.context.facing;
@@ -196,5 +244,6 @@ export function useKeroPet(): {
     containerStyle,
     onTap: () => send({ type: 'TAP' }),
     onPointerDown,
+    onChatOpen,
   };
 }
