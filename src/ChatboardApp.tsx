@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMachine } from '@xstate/react';
 import { chatMachine } from './machines/chatMachine';
+import { mockRespond } from './lib/mockRespond';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 
@@ -64,6 +65,19 @@ export default function ChatboardApp() {
       speechSynthesis.cancel();
     };
   }, [snapshot.value, snapshot.context.currentUtterance, send]);
+
+  // When machine enters 'processing', generate a mock reply and send RESPONSE_READY
+  useEffect(() => {
+    if (snapshot.value !== 'processing') return;
+    const { language, messages } = snapshot.context;
+    if (!language) return;
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
+    const reply = mockRespond(lastUserMessage?.text ?? '', language);
+    const timer = setTimeout(() => {
+      send({ type: 'RESPONSE_READY', text: reply });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [snapshot.value, send]);
 
   // Auto-scroll transcript to bottom when messages change
   useEffect(() => {
@@ -184,22 +198,29 @@ export default function ChatboardApp() {
         <>
           <ScrollArea className="flex-1 px-4 py-3">
             <div className="flex flex-col gap-3">
-              {snapshot.context.messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={`flex ${msg.role === 'kero' ? 'justify-start' : 'justify-end'}`}
-                >
+              {snapshot.context.messages.map((msg, i) => {
+                const isLastKeroWhileSpeaking =
+                  isSpeaking &&
+                  msg.role === 'kero' &&
+                  i === snapshot.context.messages.length - 1;
+
+                return (
                   <div
-                    className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm leading-relaxed ${
-                      msg.role === 'kero'
-                        ? 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-100'
-                        : 'bg-secondary text-secondary-foreground'
-                    }`}
+                    key={i}
+                    className={`flex ${msg.role === 'kero' ? 'justify-start' : 'justify-end'}`}
                   >
-                    {msg.text}
+                    <div
+                      className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm leading-relaxed ${
+                        msg.role === 'kero'
+                          ? 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-100'
+                          : 'bg-secondary text-secondary-foreground'
+                      } ${isLastKeroWhileSpeaking ? 'animate-pulse' : ''}`}
+                    >
+                      {msg.text}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Live interim user bubble */}
               {interimText ? (
