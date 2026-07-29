@@ -293,6 +293,7 @@ export const keroMachine = setup({
       },
     },
     looking: {
+      entry: { type: 'resetDragFrame' },
       on: {
         TICK:       { actions: 'advanceIdleFrame' },
         CHAT_CLOSE: { target: 'performing' },
