@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMachine } from '@xstate/react';
 import { chatMachine } from './machines/chatMachine';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -7,12 +7,29 @@ import { Button } from '@/components/ui/button';
 declare global {
   interface Window {
     __TAURI_INTERNALS__?: unknown;
+    SpeechRecognition: typeof SpeechRecognition;
+    webkitSpeechRecognition: typeof SpeechRecognition;
   }
 }
+
+const SpeechRecognitionAPI =
+  typeof window !== 'undefined'
+    ? (window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null)
+    : null;
+
+const STT_SUPPORTED = SpeechRecognitionAPI !== null;
+
+const LANG_CODES: Record<'en' | 'es', string> = { en: 'en-US', es: 'es-ES' };
 
 export default function ChatboardApp() {
   const [snapshot, send] = useMachine(chatMachine);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<InstanceType<typeof SpeechRecognition> | null>(null);
+
+  // Interim text shown in the live user bubble while recognition is running
+  const [interimText, setInterimText] = useState('');
+  // Text input fallback (when STT is not supported)
+  const [fallbackText, setFallbackText] = useState('');
 
   // Emit chat-closed on window unload (keep existing logic)
   useEffect(() => {
@@ -36,7 +53,6 @@ export default function ChatboardApp() {
     const language = snapshot.context.language;
     if (!text || !language) return;
 
-    const LANG_CODES: Record<'en' | 'es', string> = { en: 'en-US', es: 'es-ES' };
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = LANG_CODES[language];
     utter.onend = () => send({ type: 'SPEECH_END' });
@@ -52,10 +68,81 @@ export default function ChatboardApp() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [snapshot.context.messages]);
 
+  // Also scroll when interim text appears
+  useEffect(() => {
+    if (interimText) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [interimText]);
+
+  // Start Web Speech API recognition
+  const startRecognition = useCallback(() => {
+    if (!STT_SUPPORTED || !SpeechRecognitionAPI) return;
+
+    const language = snapshot.context.language;
+    const lang = language ? LANG_CODES[language] : 'en-US';
+
+    const recognition = new SpeechRecognitionAPI();
+    recognition.lang = lang;
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognitionRef.current = recognition;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const last = event.results[event.results.length - 1];
+      const text = last[0].transcript;
+      if (last.isFinal) {
+        setInterimText('');
+        send({ type: 'SPEECH_RESULT', text });
+      } else {
+        setInterimText(text);
+      }
+    };
+
+    recognition.onend = () => {
+      setInterimText('');
+      recognitionRef.current = null;
+    };
+
+    recognition.onerror = () => {
+      setInterimText('');
+      recognitionRef.current = null;
+    };
+
+    recognition.start();
+  }, [snapshot.context.language, send]);
+
+  // Abort recognition if machine leaves 'listening' unexpectedly
+  useEffect(() => {
+    if (snapshot.value !== 'listening' && recognitionRef.current) {
+      recognitionRef.current.abort();
+      recognitionRef.current = null;
+      setInterimText('');
+    }
+  }, [snapshot.value]);
+
+  const isIdle = snapshot.value === 'idle';
+  const isListening = snapshot.value === 'listening';
   const isSpeaking = snapshot.value === 'speaking';
   const isProcessing = snapshot.value === 'processing';
-  // idle stays disabled until Task 06 wires up STT
-  const micDisabled = isSpeaking || isProcessing || snapshot.value === 'idle';
+
+  const micDisabled = isSpeaking || isProcessing || isListening;
+
+  const handleMicClick = () => {
+    send({ type: 'TAP_MIC' });
+    startRecognition();
+  };
+
+  const handleFallbackSubmit = () => {
+    if (!fallbackText.trim()) return;
+    const text = fallbackText.trim();
+    setFallbackText('');
+    send({ type: 'TAP_MIC' });
+    // Give the machine a tick to enter listening, then send the result
+    setTimeout(() => {
+      send({ type: 'SPEECH_RESULT', text });
+    }, 0);
+  };
 
   return (
     <main className="flex flex-col h-screen bg-background text-foreground">
@@ -106,21 +193,63 @@ export default function ChatboardApp() {
                   </div>
                 </div>
               ))}
+
+              {/* Live interim user bubble */}
+              {interimText ? (
+                <div className="flex justify-end">
+                  <div className="max-w-[75%] rounded-2xl px-4 py-2 text-sm leading-relaxed bg-secondary/50 text-secondary-foreground/60 italic">
+                    {interimText}
+                  </div>
+                </div>
+              ) : null}
+
               <div ref={bottomRef} />
             </div>
           </ScrollArea>
 
           {/* Control bar */}
-          <div className="flex items-center justify-center px-4 py-3 border-t border-border shrink-0">
-            <Button
-              size="icon-lg"
-              variant="outline"
-              disabled={micDisabled}
-              aria-label="按下說話"
-              onClick={() => send({ type: 'TAP_MIC' })}
-            >
-              🎤
-            </Button>
+          <div className="flex items-center justify-center px-4 py-3 border-t border-border shrink-0 gap-3">
+            {STT_SUPPORTED ? (
+              <Button
+                size="icon-lg"
+                variant="outline"
+                disabled={micDisabled}
+                aria-label="按下說話"
+                aria-pressed={isListening}
+                onClick={handleMicClick}
+                className={
+                  isListening
+                    ? 'ring-2 ring-red-500 ring-offset-2 text-red-500'
+                    : isIdle
+                    ? ''
+                    : ''
+                }
+              >
+                🎤
+              </Button>
+            ) : (
+              /* Fallback text input when Web Speech API is not supported */
+              <>
+                <input
+                  type="text"
+                  className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="輸入訊息…"
+                  value={fallbackText}
+                  disabled={!isIdle}
+                  onChange={(e) => setFallbackText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleFallbackSubmit();
+                  }}
+                />
+                <Button
+                  size="sm"
+                  disabled={!isIdle || !fallbackText.trim()}
+                  onClick={handleFallbackSubmit}
+                >
+                  送出
+                </Button>
+              </>
+            )}
           </div>
         </>
       )}
