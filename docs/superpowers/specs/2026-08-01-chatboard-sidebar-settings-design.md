@@ -41,8 +41,19 @@ stateful lifecycle, and pages are pure views.
   connection (both pages stay mounted or only the presentational view swaps;
   the machine and `connRef` live in the shell regardless).
 
-- **`Sidebar`** — two nav items: 🐸 語言練習 / ⚙️ 設定. Local active-page state
-  driven by props (`active`, `onSelect`). No routing library.
+- **Sidebar** — the **shadcn `sidebar` component** (`npx shadcn add sidebar`,
+  base-nova/base-ui style). This adds `src/components/ui/sidebar.tsx` and pulls
+  its dependencies (Sheet, Tooltip, Separator, Skeleton, `useIsMobile` hook,
+  etc.). The shell wraps content in `<SidebarProvider>` and renders a `<Sidebar>`
+  with a `<SidebarMenu>` of two `<SidebarMenuButton>` items: 🐸 語言練習 /
+  ⚙️ 設定 (lucide icons), driving `activePage` via `isActive` + `onClick`.
+  No routing library.
+  - **Verification at implementation time:** confirm `shadcn add sidebar`
+    resolves against the base-nova registry and its deps install cleanly
+    (`npm run typecheck` + app boots). If the component is unavailable or drags
+    in Radix that clashes with `@base-ui/react`, fall back to a lightweight
+    custom `<aside>` nav built from the existing `Button`/tokens — same two-item
+    behaviour, so `ChatPage`/`SettingsPage`/state design is unaffected.
 
 - **`ChatPage`** — presentational. Props: `snapshot`, `send`, `pttDown`,
   `pttUp`, `keroInterim`. Contains the current chat JSX moved verbatim
