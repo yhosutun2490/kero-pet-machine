@@ -86,27 +86,27 @@ WebRTC 在 WebView 內原生處理麥克風擷取、回音消除、遠端音訊�
   - `connecting`（鑄造 key + WebRTC 協商中）
   - `live`（session 進行中）；context 記錄 `speaker: 'user' | 'kero' | null`，由 Realtime 事件更新
   - `ended`（正常結束）/ `error`（含錯誤訊息）
-  - 事件：`START`（按 🎤）、`CONNECTED`、`SPEAKER_CHANGE`、`TRANSCRIPT`、`END`、`ERROR`
+  - 事件：`START`（連線）、`CONNECTED`、`PTT_DOWN`/`PTT_UP`（按住/放開說話）、`SPEAKER_CHANGE`、`TRANSCRIPT`、`END`、`ERROR`
 - `src/ChatboardApp.tsx`（改寫）：
   - 移除 `webkitSpeechRecognition`、`SpeechSynthesisUtterance`、`mockRespond`、`[DEBUG-mic]` 除錯碼
-  - 麥克風按鈕語意改為「開始／結束對話」
+  - 互動模型：按 🎤 先**連線**（connecting→live）；連上後 🎤 變成**按住說話（push-to-talk）**——按住時麥克風 track 啟用、放開時送 `input_audio_buffer.commit` + `response.create` 取得 Kero 回覆；另設「結束對話」鈕 disconnect
   - 依 `speaker` 呈現「誰在說話」的視覺狀態
   - 隱藏的 `<audio autoplay>` 播放 Kero 語音
 - 淘汰 `src/lib/mockRespond.ts`（移出對話路徑）
 
 ### Realtime session 設定（角色與語言）
 
-- `voice`：擇一固定（例 `marin`）
+- `voice`：`cedar`
 - `instructions`：Kero 是友善的青蛙語言對話練習夥伴；以所選語言對話（`en` → English、`es` → Spanish）；對學習者用簡單句、鼓勵、必要時溫和糾正
-- `input_audio_transcription`：開啟（供使用者字幕）
-- `turn_detection`：`server_vad`（模型自動判斷輪次，麥克風保持開啟）
+- `input_audio_transcription`：`gpt-4o-transcribe`（供使用者字幕）
+- `turn_detection`：`null`（**按住說話 / push-to-talk**；不用 server VAD，由前端手動控制輪次）
 
 ## 資料流（單次對話）
 
-1. 使用者選語言 → 按 🎤 → machine 進 `connecting`
+1. 使用者選語言 → 按 🎤 連線 → machine 進 `connecting`
 2. `getRealtimeSession(lang)` → 呼叫 Express `/session` 鑄造 ephemeral → 回前端
-3. `connectRealtime()`：`getUserMedia` → 加 track → SDP 協商 → 連上 → machine 進 `live`
-4. 使用者說話 → server VAD 偵測 → 模型回應 → 遠端音訊 track 播放（Kero 說話）
+3. `connectRealtime()`：`getUserMedia` → 加 track（預設不啟用）→ SDP 協商 → 連上 → machine 進 `live`
+4. 使用者**按住 🎤 說話** → 放開 → 送 `input_audio_buffer.commit` + `response.create` → 模型回應 → 遠端音訊 track 播放（Kero 說話）
 5. data channel 事件更新字幕：
    - 使用者：`conversation.item.input_audio_transcription.completed`
    - Kero：`response.audio_transcript.delta` / `.done`
@@ -135,7 +135,7 @@ WebRTC 在 WebView 內原生處理麥克風擷取、回音消除、遠端音訊�
 
 ## 開放問題 / 待 review 確認
 
-- `voice` 要用哪一個？（預設 `marin`）
-- 轉錄模型：`gpt-4o-transcribe` 或 `whisper-1`？（影響字幕品質與費用）
-- 麥克風互動：常開 + server VAD（本 spec 預設）vs 按住說話（push-to-talk）？
-- `gpt-realtime` 的實際 API 欄位（`client_secrets` 端點的請求/回應結構）需在實作時對照當前官方文件核實。
+- ~~`voice`~~ → 已定 `cedar`
+- ~~轉錄模型~~ → 已定 `gpt-4o-transcribe`
+- ~~麥克風互動~~ → 已定 **按住說話（push-to-talk）**，`turn_detection: null`
+- `gpt-realtime` 的實際 API 欄位（`client_secrets` 端點的請求/回應結構、push-to-talk 的 `input_audio_buffer.commit` / `response.create` 事件）需在實作時對照當前官方文件核實。
