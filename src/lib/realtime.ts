@@ -63,6 +63,12 @@ export function parseRealtimeEvent(raw: { type?: string; [k: string]: unknown })
 
 const CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 
+// Push-to-talk needs a minimum hold before we treat it as real speech. A quick
+// tap (press + release without speaking) would otherwise commit a near-empty
+// buffer and make Kero respond to silence. The Realtime API also rejects a
+// commit under ~100ms of audio, so this doubles as a guard against that error.
+const MIN_TALK_MS = 300;
+
 export interface RealtimeConnection {
   /** Enable the mic track (push-to-talk down). */
   startTalking: () => void;
@@ -147,12 +153,22 @@ export async function connectRealtime(opts: ConnectOptions): Promise<RealtimeCon
   }
   await pc.setRemoteDescription({ type: 'answer', sdp: await sdpRes.text() });
 
+  let talkStartedAt = 0;
   return {
-    startTalking: () => { micTrack.enabled = true; },
+    startTalking: () => {
+      micTrack.enabled = true;
+      talkStartedAt = performance.now();
+    },
     stopTalking: () => {
       // Assumes push-to-talk: the session is configured with turn_detection=null,
       // so we manually commit the buffer and request a response here.
       micTrack.enabled = false;
+      // Too short to be speech (an accidental tap): drop the buffer instead of
+      // committing, so Kero doesn't respond to silence.
+      if (performance.now() - talkStartedAt < MIN_TALK_MS) {
+        send({ type: 'input_audio_buffer.clear' });
+        return;
+      }
       send({ type: 'input_audio_buffer.commit' });
       send({ type: 'response.create' });
     },
