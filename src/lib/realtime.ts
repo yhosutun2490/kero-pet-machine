@@ -86,9 +86,21 @@ export async function connectRealtime(opts: ConnectOptions): Promise<RealtimeCon
     opts.remoteAudio.srcObject = e.streams[0];
   };
 
-  // Local mic — added but muted until push-to-talk.
-  const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+  // Local mic — added but muted until push-to-talk. Clean up the peer
+  // connection if the mic can't be acquired (e.g. permission denied).
+  let mic: MediaStream;
+  try {
+    mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    pc.close();
+    throw err;
+  }
   const micTrack = mic.getAudioTracks()[0];
+  if (!micTrack) {
+    mic.getTracks().forEach((t) => t.stop());
+    pc.close();
+    throw new Error('No audio track available from getUserMedia');
+  }
   micTrack.enabled = false;
   pc.addTrack(micTrack, mic);
 
@@ -129,6 +141,8 @@ export async function connectRealtime(opts: ConnectOptions): Promise<RealtimeCon
   return {
     startTalking: () => { micTrack.enabled = true; },
     stopTalking: () => {
+      // Assumes push-to-talk: the session is configured with turn_detection=null,
+      // so we manually commit the buffer and request a response here.
       micTrack.enabled = false;
       send({ type: 'input_audio_buffer.commit' });
       send({ type: 'response.create' });

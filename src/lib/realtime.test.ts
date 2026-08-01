@@ -38,8 +38,10 @@ describe('parseRealtimeEvent', () => {
       .toEqual({ kind: 'kero_delta', text: 'Hi' });
   });
 
-  it('maps kero transcript done to kero_done with full text', () => {
+  it('maps kero transcript done to kero_done with full text (both naming variants)', () => {
     expect(parseRealtimeEvent({ type: 'response.audio_transcript.done', transcript: 'Hi there' }))
+      .toEqual({ kind: 'kero_done', text: 'Hi there' });
+    expect(parseRealtimeEvent({ type: 'response.output_audio_transcript.done', transcript: 'Hi there' }))
       .toEqual({ kind: 'kero_done', text: 'Hi there' });
   });
 
