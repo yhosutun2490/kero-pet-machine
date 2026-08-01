@@ -22,6 +22,9 @@ pnpm-debug.log*
 .env.*
 !.env.example
 
+# Local scratch / planning files
+.scratch/
+
 # OS / editor noise
 .DS_Store
 Thumbs.db

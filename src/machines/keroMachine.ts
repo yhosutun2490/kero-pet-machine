@@ -46,7 +46,9 @@ export type KeroEvent =
   | { type: 'DRAG_END' }
   | { type: 'POSITION_SYNC'; position: { x: number; y: number } }
   | { type: 'TAP' }
-  | { type: 'TICK'; dt: number };
+  | { type: 'TICK'; dt: number }
+  | { type: 'CHAT_OPEN' }
+  | { type: 'CHAT_CLOSE' };
 
 export interface KeroInput {
   bounds?: { width: number; height: number };
@@ -270,6 +272,7 @@ export const keroMachine = setup({
         TICK:       { actions: 'advanceActionFrame' },
         POINTER:    { actions: 'applyPointerVelocity' },
         DRAG_START: { target: 'dragging' },
+        CHAT_OPEN:  { target: 'looking' },
       },
     },
     resting: {
@@ -278,6 +281,7 @@ export const keroMachine = setup({
         TAP:        { target: 'performing' },
         TICK:       { actions: 'advanceIdleFrame' },
         DRAG_START: { target: 'dragging' },
+        CHAT_OPEN:  { target: 'looking' },
       },
     },
     dragging: {
@@ -289,7 +293,12 @@ export const keroMachine = setup({
       },
     },
     looking: {
-      on: { TICK: { actions: 'advanceIdleFrame' } },
+      entry: { type: 'resetDragFrame' },
+      on: {
+        TICK:       { actions: 'advanceIdleFrame' },
+        CHAT_CLOSE: { target: 'performing' },
+        DRAG_START: { target: 'dragging' },
+      },
     },
   },
 });
