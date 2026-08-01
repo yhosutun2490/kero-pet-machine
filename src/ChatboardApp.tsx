@@ -7,6 +7,9 @@ import {
   type RealtimeConnection,
 } from './lib/realtime';
 import ChatPage from '@/components/ChatPage';
+import SettingsPage from '@/components/SettingsPage';
+import AppSidebar, { type ChatboardView } from '@/components/AppSidebar';
+import { SidebarProvider } from '@/components/ui/sidebar';
 
 declare global {
   interface Window {
@@ -24,6 +27,9 @@ export default function ChatboardApp() {
 
   // Streaming interim transcript for Kero's current turn.
   const [keroInterim, setKeroInterim] = useState('');
+
+  // Which View the sidebar has selected. No routing — in-window state only.
+  const [activeView, setActiveView] = useState<ChatboardView>('practice');
 
   // Emit chat-closed on window unload (keep existing Tauri behaviour).
   useEffect(() => {
@@ -140,18 +146,35 @@ export default function ChatboardApp() {
     send({ type: 'SET_SPEAKER', speaker: null });
   }, [send]);
 
-  return (
-    <>
-      <ChatPage
-        snapshot={snapshot}
-        send={send}
-        pttDown={pttDown}
-        pttUp={pttUp}
-        keroInterim={keroInterim}
-      />
+  // Leaving the Practice View while push-to-talk is held must auto-end the
+  // recording (equivalent to releasing the mic); pttUp is idempotent so this
+  // is a no-op when not talking. The connection itself stays up — this only
+  // closes the open audio turn.
+  useEffect(() => {
+    if (activeView !== 'practice') pttUp();
+  }, [activeView, pttUp]);
 
-      {/* Hidden element that plays Kero's streamed voice. */}
+  return (
+    <SidebarProvider style={{ '--sidebar-width': '11rem' } as React.CSSProperties}>
+      <AppSidebar active={activeView} onSelect={setActiveView} />
+
+      <div className="flex-1 min-w-0">
+        {activeView === 'practice' ? (
+          <ChatPage
+            snapshot={snapshot}
+            send={send}
+            pttDown={pttDown}
+            pttUp={pttUp}
+            keroInterim={keroInterim}
+          />
+        ) : (
+          <SettingsPage />
+        )}
+      </div>
+
+      {/* Hidden element that plays Kero's streamed voice. Lives in the Shell so
+          it survives View switches. */}
       <audio ref={audioRef} autoPlay hidden />
-    </>
+    </SidebarProvider>
   );
 }
