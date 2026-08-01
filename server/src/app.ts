@@ -11,17 +11,18 @@ const VALID_LANGS = new Set<Lang>(['en', 'es']);
 
 export function createApp(deps: AppDeps): Express {
   const app = express();
+  // Permissive during development; Phase 2 will restrict origins before deploy.
   app.use(cors());
   app.use(express.json());
 
   app.post('/session', async (req, res) => {
-    const lang = req.body?.lang;
-    if (!VALID_LANGS.has(lang)) {
+    const lang: unknown = req.body?.lang;
+    if (typeof lang !== 'string' || !VALID_LANGS.has(lang as Lang)) {
       res.status(400).json({ error: 'lang must be "en" or "es"' });
       return;
     }
     try {
-      const session = await deps.mint(lang);
+      const session = await deps.mint(lang as Lang);
       res.status(200).json(session);
     } catch (err) {
       res.status(502).json({ error: err instanceof Error ? err.message : 'mint failed' });

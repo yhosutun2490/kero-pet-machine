@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { createApp } from './app';
+import type { Lang, MintResult } from './session';
 
-function appWith(mint: (lang: string) => Promise<{ value: string }>) {
-  return createApp({ mint: mint as never });
+function appWith(mint: (lang: Lang) => Promise<MintResult>) {
+  return createApp({ mint });
 }
 
 describe('POST /session', () => {
