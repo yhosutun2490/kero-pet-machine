@@ -7,6 +7,10 @@ export interface ChatContext {
   messages: { role: 'kero' | 'user'; text: string }[];
   speaker: Speaker;
   error: string | null;
+  // Incremented on every RECONNECT. The Shell keys its connect effect on this
+  // so a settings Save re-establishes the session even from 'connecting', and
+  // uses nonce > 0 to suppress the greeting on a mid-conversation reconnect.
+  reconnectNonce: number;
 }
 
 export type ChatEvent =
@@ -17,10 +21,11 @@ export type ChatEvent =
   | { type: 'SET_SPEAKER'; speaker: Speaker }
   | { type: 'END' }
   | { type: 'ERROR'; message: string }
+  | { type: 'RECONNECT' }
   | { type: 'RESTART' };
 
 export function createInitialChatContext(): ChatContext {
-  return { language: null, messages: [], speaker: null, error: null };
+  return { language: null, messages: [], speaker: null, error: null, reconnectNonce: 0 };
 }
 
 export const chatMachine = setup({
@@ -46,6 +51,7 @@ export const chatMachine = setup({
       const e = event as Extract<ChatEvent, { type: 'ERROR' }>;
       return { error: e.message, speaker: null };
     }),
+    bumpReconnect: assign(({ context }) => ({ reconnectNonce: context.reconnectNonce + 1 })),
     reset: assign(() => createInitialChatContext()),
   },
 }).createMachine({
@@ -61,6 +67,9 @@ export const chatMachine = setup({
     connecting: {
       on: {
         CONNECTED: { target: 'live' },
+        // Settings saved mid-connect: stay connecting, bump the nonce so the
+        // Shell restarts the in-flight attempt with the new selection.
+        RECONNECT: { actions: 'bumpReconnect' },
         ERROR: { target: 'error', actions: 'setError' },
       },
     },
@@ -69,6 +78,8 @@ export const chatMachine = setup({
         USER_MESSAGE: { actions: 'appendUserMessage' },
         KERO_MESSAGE: { actions: 'appendKeroMessage' },
         SET_SPEAKER: { actions: 'setSpeaker' },
+        // Settings saved mid-conversation: reconnect, keeping the transcript.
+        RECONNECT: { target: 'connecting', actions: 'bumpReconnect' },
         END: { target: 'ended' },
         ERROR: { target: 'error', actions: 'setError' },
       },

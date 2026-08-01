@@ -11,6 +11,7 @@ import SettingsPage from '@/components/SettingsPage';
 import AppSidebar, { type ChatboardView } from '@/components/AppSidebar';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { useSettings } from '@/hooks/useSettings';
+import type { Settings } from '@/lib/settings';
 
 declare global {
   interface Window {
@@ -32,6 +33,10 @@ export default function ChatboardApp() {
   // Which View the sidebar has selected. No routing — in-window state only.
   const [activeView, setActiveView] = useState<ChatboardView>('practice');
 
+  // Current machine state value, read by the (dependency-light) Save handler.
+  const snapshotValueRef = useRef(snapshot.value);
+  snapshotValueRef.current = snapshot.value;
+
   // Persisted model/voice. Read through a ref inside the connect effect so a
   // Save doesn't re-trigger connect — it takes effect on the next connect.
   // (Live reconnect-on-Save is ticket 04.)
@@ -51,9 +56,12 @@ export default function ChatboardApp() {
     return () => { cleanup?.(); };
   }, []);
 
-  // Connect when a language is chosen (machine enters 'connecting').
+  // Connect when a language is chosen (machine enters 'connecting'). Also
+  // re-runs on a settings-driven reconnect: RECONNECT bumps reconnectNonce, and
+  // nonce > 0 means "mid-conversation reconnect" so we skip the greeting.
   const language = snapshot.context.language;
   const isConnecting = snapshot.value === 'connecting';
+  const reconnectNonce = snapshot.context.reconnectNonce;
   useEffect(() => {
     if (!isConnecting || !language) return;
     let cancelled = false;
@@ -70,7 +78,7 @@ export default function ChatboardApp() {
         const conn = await connectRealtime({
           session,
           remoteAudio: audioEl,
-          greet: true,
+          greet: reconnectNonce === 0,
           onEvent: (evt) => {
             switch (evt.kind) {
               case 'user_transcript':
@@ -109,7 +117,7 @@ export default function ChatboardApp() {
     })();
 
     return () => { cancelled = true; };
-  }, [isConnecting, language, send]);
+  }, [isConnecting, language, reconnectNonce, send]);
 
   // Tear down the connection when leaving 'live'.
   const isLive = snapshot.value === 'live';
@@ -154,6 +162,20 @@ export default function ChatboardApp() {
     send({ type: 'SET_SPEAKER', speaker: null });
   }, [send]);
 
+  // Persist a settings change and, if a conversation is already live or
+  // connecting, reconnect it so the new model/voice takes effect immediately.
+  // Otherwise the saved value simply applies on the next connect.
+  const handleSaveSettings = useCallback(
+    (next: Settings) => {
+      saveSettings(next);
+      const value = snapshotValueRef.current;
+      if (value === 'live' || value === 'connecting') {
+        send({ type: 'RECONNECT' });
+      }
+    },
+    [saveSettings, send],
+  );
+
   // Leaving the Practice View while push-to-talk is held must auto-end the
   // recording (equivalent to releasing the mic); pttUp is idempotent so this
   // is a no-op when not talking. The connection itself stays up — this only
@@ -176,7 +198,7 @@ export default function ChatboardApp() {
             keroInterim={keroInterim}
           />
         ) : (
-          <SettingsPage saved={settings} onSave={saveSettings} />
+          <SettingsPage saved={settings} onSave={handleSaveSettings} />
         )}
       </div>
 

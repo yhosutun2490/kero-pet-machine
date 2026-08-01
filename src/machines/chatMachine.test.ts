@@ -83,6 +83,44 @@ describe('live', () => {
   });
 });
 
+describe('RECONNECT', () => {
+  it('from live returns to connecting, preserves the transcript, and bumps the nonce', () => {
+    const actor = connected();
+    actor.send({ type: 'KERO_MESSAGE', text: 'Hi there' });
+    const before = actor.getSnapshot().context.reconnectNonce;
+    actor.send({ type: 'RECONNECT' });
+    const s = actor.getSnapshot();
+    expect(s.value).toBe('connecting');
+    expect(s.context.messages).toEqual([{ role: 'kero', text: 'Hi there' }]);
+    expect(s.context.reconnectNonce).toBe(before + 1);
+  });
+
+  it('from connecting stays connecting and bumps the nonce', () => {
+    const actor = createActor(chatMachine).start();
+    actor.send({ type: 'SELECT_LANGUAGE', lang: 'en' });
+    const before = actor.getSnapshot().context.reconnectNonce;
+    actor.send({ type: 'RECONNECT' });
+    const s = actor.getSnapshot();
+    expect(s.value).toBe('connecting');
+    expect(s.context.reconnectNonce).toBe(before + 1);
+  });
+
+  it('is ignored from selectingLanguage', () => {
+    const actor = createActor(chatMachine).start();
+    actor.send({ type: 'RECONNECT' });
+    expect(actor.getSnapshot().value).toBe('selectingLanguage');
+  });
+
+  it('nonce resets on RESTART', () => {
+    const actor = connected();
+    actor.send({ type: 'RECONNECT' });
+    actor.send({ type: 'CONNECTED' });
+    actor.send({ type: 'END' });
+    actor.send({ type: 'RESTART' });
+    expect(actor.getSnapshot().context.reconnectNonce).toBe(0);
+  });
+});
+
 describe('RESTART', () => {
   it('from ended resets to selectingLanguage with clean context', () => {
     const actor = connected('es');
