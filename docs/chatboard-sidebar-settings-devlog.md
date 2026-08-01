@@ -106,7 +106,21 @@ Shell 用 `settingsRef`（每次 render 同步更新的 ref）在 connect effect
 
 `buildSessionBody` 對未知 model/voice **直接 throw**；`/session` route 先驗證，未知值回 **400**（client 的錯），不是 502（上游的錯）。沒有 silent fallback，壞掉的 client 會被看見。model/voice 都可省略（沿用 pre-settings 預設），只在**有帶但不合法**時才 400。
 
-### 4.6 其他小坑
+### 4.6 Push-to-talk：沒講話也回應（tap + 靜音 held）
+
+**症狀：** 點一下麥克風放開、或按住但沒出聲，Kero 也會回話。
+
+**釐清：不是敏感度問題（一開始）。** session 設 `turn_detection: null`，伺服器端 VAD 完全關掉，走純 push-to-talk。所以沒有任何「敏感度門檻」在判斷是否為語音——真正原因是 `stopTalking` **無條件**送 `input_audio_buffer.commit` + `response.create`，每次放開都強迫模型回話，於是它對著靜音也回。
+
+**兩層修法：**
+1. **時長門檻**（`MIN_TALK_MS = 300`）：按太短判定誤觸，改送 `input_audio_buffer.clear`、不回應。順帶擋掉 API「commit 不足約 100ms 音訊會報錯」。擋得掉「快速點一下」，擋不掉「按住但沉默」。
+2. **音量門檻 / RMS gate**（`SPEECH_RMS_THRESHOLD = 0.015`）：用 Web Audio `AnalyserNode`（無外部依賴）讀原始麥克風，按住期間每 `RMS_SAMPLE_MS = 50ms` 抽樣一次，記住這段的**峰值 RMS**。放開時若峰值低於門檻 → 判定整段是靜音 → 丟棄不回應。這才是真正處理「按住沉默」的槓桿。
+
+**這才是「敏感度」所在：** `SPEECH_RMS_THRESHOLD` 就是可調的敏感度——調高要講比較大聲才觸發（誤觸少、但小聲會被吃掉），調低輕聲也能觸發（但環境噪音容易漏進來）。
+
+**細節：** `AnalyserNode` 接的是原始 `getUserMedia` stream，與 `micTrack.enabled`（只控制 WebRTC 送什麼）無關；但我們只在按住（`enabled = true`）期間抽樣，所以讀到的是真實語音。`AudioContext` 在第一次 `startTalking`（使用者手勢）時 `resume()`，`disconnect` 時 `close()` 並清掉 interval。
+
+### 4.7 其他小坑
 
 - **`.scratch/` 被 gitignore：** ticket 檔案（`.scratch/chatboard-sidebar-settings/issues/`）不進版控，與專案既有 ticket 慣例一致。設計文件（spec/ADR/glossary）才進 git。
 - **shadcn sidebar 能對上 base-nova registry：** `npx shadcn@latest add sidebar --yes` 一次帶入 7 個檔（sidebar/sheet/tooltip/separator/skeleton/input + `use-mobile`），與 `@base-ui/react` 無衝突，不需退回手刻 `<aside>`。CSS 變數（`--sidebar-*`）在 `styles.css` 已存在。用 `collapsible="none"` 做小視窗的靜態側邊欄，寬度以 `--sidebar-width: 11rem` 覆寫。
