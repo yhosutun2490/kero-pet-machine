@@ -63,5 +63,9 @@ export async function mintSession(opts: MintOptions): Promise<MintResult> {
     const detail = await res.text().catch(() => '');
     throw new Error(`OpenAI session mint failed: ${res.status} ${detail}`);
   }
-  return (await res.json()) as MintResult;
+  const json = (await res.json()) as Record<string, unknown>;
+  if (typeof json.value !== 'string') {
+    throw new Error(`Unexpected session response shape: ${JSON.stringify(json)}`);
+  }
+  return json as unknown as MintResult;
 }

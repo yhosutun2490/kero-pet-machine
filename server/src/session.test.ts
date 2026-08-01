@@ -41,4 +41,15 @@ describe('mintSession', () => {
       mintSession({ apiKey: 'sk-abc', lang: 'en', fetchImpl: fakeFetch as typeof fetch }),
     ).rejects.toThrow(/OpenAI session mint failed: 400/);
   });
+
+  it('throws a clear error when the response is missing a string value', async () => {
+    const fakeFetch = async () =>
+      new Response(JSON.stringify({ nope: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    await expect(
+      mintSession({ apiKey: 'sk-abc', lang: 'en', fetchImpl: fakeFetch as typeof fetch }),
+    ).rejects.toThrow(/Unexpected session response shape/);
+  });
 });
