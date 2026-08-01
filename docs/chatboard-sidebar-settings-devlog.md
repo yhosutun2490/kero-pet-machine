@@ -128,7 +128,21 @@ Shell 用 `settingsRef`（每次 render 同步更新的 ref）在 connect effect
 
 **修法：** 把練習語言 pin 進轉錄設定 `transcription: { model, language: lang }`。`lang` 本身就是 ISO-639-1（`en`/`es`），直接用。這樣轉錄被限制在正確語言，也順帶提升準確度。
 
-### 4.8 其他小坑
+### 4.8 Kero 一直要求發音 → 調教學 prompt
+
+**症狀：** 對話中 Kero 一直重複要使用者發音／跟著唸，不像自然對話。
+
+**根因：** 這是 `buildSessionBody` 的系統 `instructions`（教學模式）行為，不是能不能調設定的問題。原本指令只寫「簡短、鼓勵、溫和糾正」，沒界定互動方式，模型容易陷入重複要求。
+
+**修法：** 改寫指令，明確要求：
+- 當**對話夥伴**，回應使用者說的話後**丟一個簡單的追問**維持話題。
+- 每次回合短（1–2 句）、用學習者程度的簡單字。
+- 糾錯時**把正確說法自然融進回覆**、不說教。
+- 明確禁止：**這是對話不是發音練習，不要一直叫使用者重說或發音**；真的沒聽懂就友善問一次，然後繼續。
+
+**注意：** 指令是 session 設定，**要重新連線／新對話才生效**（進行中的舊 session 不變）。教學風格目前寫死在 server，非使用者可調；若之後要「難度／風格」開關再擴充。
+
+### 4.9 其他小坑
 
 - **`.scratch/` 被 gitignore：** ticket 檔案（`.scratch/chatboard-sidebar-settings/issues/`）不進版控，與專案既有 ticket 慣例一致。設計文件（spec/ADR/glossary）才進 git。
 - **shadcn sidebar 能對上 base-nova registry：** `npx shadcn@latest add sidebar --yes` 一次帶入 7 個檔（sidebar/sheet/tooltip/separator/skeleton/input + `use-mobile`），與 `@base-ui/react` 無衝突，不需退回手刻 `<aside>`。CSS 變數（`--sidebar-*`）在 `styles.css` 已存在。用 `collapsible="none"` 做小視窗的靜態側邊欄，寬度以 `--sidebar-width: 11rem` 覆寫。
