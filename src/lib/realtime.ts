@@ -132,9 +132,10 @@ export async function connectRealtime(opts: ConnectOptions): Promise<RealtimeCon
     },
   });
   if (!sdpRes.ok) {
+    const detail = await sdpRes.text().catch(() => '');
     pc.close();
     micTrack.stop();
-    throw new Error(`realtime connect failed: ${sdpRes.status}`);
+    throw new Error(`realtime connect failed: ${sdpRes.status} ${detail}`);
   }
   await pc.setRemoteDescription({ type: 'answer', sdp: await sdpRes.text() });
 
