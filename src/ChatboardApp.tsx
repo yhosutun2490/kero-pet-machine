@@ -10,6 +10,7 @@ import ChatPage from '@/components/ChatPage';
 import SettingsPage from '@/components/SettingsPage';
 import AppSidebar, { type ChatboardView } from '@/components/AppSidebar';
 import { SidebarProvider } from '@/components/ui/sidebar';
+import { useSettings } from '@/hooks/useSettings';
 
 declare global {
   interface Window {
@@ -30,6 +31,13 @@ export default function ChatboardApp() {
 
   // Which View the sidebar has selected. No routing — in-window state only.
   const [activeView, setActiveView] = useState<ChatboardView>('practice');
+
+  // Persisted model/voice. Read through a ref inside the connect effect so a
+  // Save doesn't re-trigger connect — it takes effect on the next connect.
+  // (Live reconnect-on-Save is ticket 04.)
+  const [settings, saveSettings] = useSettings();
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   // Emit chat-closed on window unload (keep existing Tauri behaviour).
   useEffect(() => {
@@ -52,7 +60,7 @@ export default function ChatboardApp() {
 
     (async () => {
       try {
-        const session = await getRealtimeSession(language);
+        const session = await getRealtimeSession(language, settingsRef.current);
         if (cancelled) return;
         const audioEl = audioRef.current;
         if (!audioEl) {
@@ -168,7 +176,7 @@ export default function ChatboardApp() {
             keroInterim={keroInterim}
           />
         ) : (
-          <SettingsPage />
+          <SettingsPage saved={settings} onSave={saveSettings} />
         )}
       </div>
 

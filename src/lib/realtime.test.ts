@@ -9,16 +9,22 @@ describe('getRealtimeSession', () => {
       new Response(JSON.stringify({ value: 'ek_abc', expires_at: 1 }), { status: 200 }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const session = await getRealtimeSession('en');
+    const session = await getRealtimeSession('en', { model: 'gpt-realtime', voice: 'cedar' });
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(String(url)).toContain('/session');
-    expect(JSON.parse(init.body as string)).toEqual({ lang: 'en' });
+    expect(JSON.parse(init.body as string)).toEqual({
+      lang: 'en',
+      model: 'gpt-realtime',
+      voice: 'cedar',
+    });
     expect(session.value).toBe('ek_abc');
   });
 
   it('throws when the server responds non-ok', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 502 })));
-    await expect(getRealtimeSession('es')).rejects.toThrow(/session request failed: 502/);
+    await expect(
+      getRealtimeSession('es', { model: 'gpt-realtime', voice: 'cedar' }),
+    ).rejects.toThrow(/session request failed: 502/);
   });
 });
 

@@ -14,6 +14,24 @@ describe('buildSessionBody', () => {
     expect(buildSessionBody('en').session.instructions).toContain('English');
     expect(buildSessionBody('es').session.instructions).toContain('Spanish');
   });
+
+  it('uses a provided model and voice', () => {
+    const body = buildSessionBody('en', { model: 'gpt-realtime-mini', voice: 'marin' });
+    expect(body.session.model).toBe('gpt-realtime-mini');
+    expect(body.session.audio.output.voice).toBe('marin');
+  });
+
+  it('throws on an unknown model', () => {
+    expect(() => buildSessionBody('en', { model: 'gpt-4o' as never, voice: 'cedar' })).toThrow(
+      /unknown model/,
+    );
+  });
+
+  it('throws on an unknown voice', () => {
+    expect(() =>
+      buildSessionBody('en', { model: 'gpt-realtime', voice: 'nova' as never }),
+    ).toThrow(/unknown voice/);
+  });
 });
 
 describe('mintSession', () => {
