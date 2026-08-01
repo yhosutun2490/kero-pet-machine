@@ -129,8 +129,12 @@ export default function ChatboardApp() {
   // a prior press must NOT commit an empty audio buffer.
   const talkingRef = useRef(false);
 
-  const pttDown = useCallback(() => {
+  const pttDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     if (talkingRef.current) return;
+    // Capture the pointer so the whole press stays bound to this button.
+    // Without capture, a tiny drift off the button fires pointerleave and
+    // cuts the recording short before the user has finished speaking.
+    e.currentTarget.setPointerCapture(e.pointerId);
     talkingRef.current = true;
     connRef.current?.startTalking();
     send({ type: 'SET_SPEAKER', speaker: 'user' });
@@ -210,7 +214,6 @@ export default function ChatboardApp() {
                     aria-pressed={speaker === 'user'}
                     onPointerDown={pttDown}
                     onPointerUp={pttUp}
-                    onPointerLeave={pttUp}
                     onPointerCancel={pttUp}
                     className={speaker === 'user' ? 'ring-2 ring-red-500 ring-offset-2 text-red-500' : ''}
                   >
