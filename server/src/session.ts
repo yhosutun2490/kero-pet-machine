@@ -26,7 +26,7 @@ export interface SessionBody {
     instructions: string;
     audio: {
       input: {
-        transcription: { model: string };
+        transcription: { model: string; language: string };
         turn_detection: null;
       };
       output: { voice: string };
@@ -55,7 +55,11 @@ export function buildSessionBody(
         `speak warmly and encouragingly, and gently correct mistakes when helpful.`,
       audio: {
         input: {
-          transcription: { model: 'gpt-4o-transcribe' },
+          // Pin the transcription language to the practice language. Without
+          // this the model auto-detects and, on short or accented utterances,
+          // sometimes transcribes as the wrong language. `lang` is already an
+          // ISO-639-1 code ('en' / 'es').
+          transcription: { model: 'gpt-4o-transcribe', language: lang },
           turn_detection: null,
         },
         output: { voice: sel.voice },

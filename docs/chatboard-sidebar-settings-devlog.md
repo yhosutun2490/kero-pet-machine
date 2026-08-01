@@ -120,7 +120,15 @@ Shell 用 `settingsRef`（每次 render 同步更新的 ref）在 connect effect
 
 **細節：** `AnalyserNode` 接的是原始 `getUserMedia` stream，與 `micTrack.enabled`（只控制 WebRTC 送什麼）無關；但我們只在按住（`enabled = true`）期間抽樣，所以讀到的是真實語音。`AudioContext` 在第一次 `startTalking`（使用者手勢）時 `resume()`，`disconnect` 時 `close()` 並清掉 interval。
 
-### 4.7 其他小坑
+### 4.7 轉錄顯示成錯的語言
+
+**症狀：** 錄音結束後，畫面顯示的使用者語句有時不是練習語言（甚至跑出別的語言的字）。
+
+**根因：** `audio.input.transcription` 只給了 `model: 'gpt-4o-transcribe'`，**沒指定語言**，模型就自動偵測；短句或發音不標準時容易猜錯語言。
+
+**修法：** 把練習語言 pin 進轉錄設定 `transcription: { model, language: lang }`。`lang` 本身就是 ISO-639-1（`en`/`es`），直接用。這樣轉錄被限制在正確語言，也順帶提升準確度。
+
+### 4.8 其他小坑
 
 - **`.scratch/` 被 gitignore：** ticket 檔案（`.scratch/chatboard-sidebar-settings/issues/`）不進版控，與專案既有 ticket 慣例一致。設計文件（spec/ADR/glossary）才進 git。
 - **shadcn sidebar 能對上 base-nova registry：** `npx shadcn@latest add sidebar --yes` 一次帶入 7 個檔（sidebar/sheet/tooltip/separator/skeleton/input + `use-mobile`），與 `@base-ui/react` 無衝突，不需退回手刻 `<aside>`。CSS 變數（`--sidebar-*`）在 `styles.css` 已存在。用 `collapsible="none"` 做小視窗的靜態側邊欄，寬度以 `--sidebar-width: 11rem` 覆寫。

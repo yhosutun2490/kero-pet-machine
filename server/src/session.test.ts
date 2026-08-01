@@ -10,6 +10,11 @@ describe('buildSessionBody', () => {
     expect(body.session.audio.input.turn_detection).toBeNull();
   });
 
+  it('pins the transcription language to the practice language', () => {
+    expect(buildSessionBody('en').session.audio.input.transcription.language).toBe('en');
+    expect(buildSessionBody('es').session.audio.input.transcription.language).toBe('es');
+  });
+
   it('puts the target language into instructions', () => {
     expect(buildSessionBody('en').session.instructions).toContain('English');
     expect(buildSessionBody('es').session.instructions).toContain('Spanish');
