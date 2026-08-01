@@ -1,61 +1,52 @@
 import { setup, assign } from 'xstate';
 
+export type Speaker = 'user' | 'kero' | null;
+
 export interface ChatContext {
   language: 'en' | 'es' | null;
   messages: { role: 'kero' | 'user'; text: string }[];
-  // Persists through idle/listening so UI can display the last utterance
-  currentUtterance: string;
+  speaker: Speaker;
+  error: string | null;
 }
 
 export type ChatEvent =
   | { type: 'SELECT_LANGUAGE'; lang: 'en' | 'es' }
-  | { type: 'TAP_MIC' }
-  | { type: 'SPEECH_RESULT'; text: string }
-  | { type: 'SPEECH_CANCEL' }
-  | { type: 'RESPONSE_READY'; text: string }
-  | { type: 'SPEECH_END' };
-
-const OPENING_LINES: Record<'en' | 'es', string> = {
-  en: 'Hello! How are you today?',
-  es: '¡Hola! ¿Cómo estás hoy?',
-};
+  | { type: 'CONNECTED' }
+  | { type: 'USER_MESSAGE'; text: string }
+  | { type: 'KERO_MESSAGE'; text: string }
+  | { type: 'SET_SPEAKER'; speaker: Speaker }
+  | { type: 'END' }
+  | { type: 'ERROR'; message: string }
+  | { type: 'RESTART' };
 
 export function createInitialChatContext(): ChatContext {
-  return {
-    language: null,
-    messages: [],
-    currentUtterance: '',
-  };
+  return { language: null, messages: [], speaker: null, error: null };
 }
 
 export const chatMachine = setup({
-  types: {} as {
-    context: ChatContext;
-    events: ChatEvent;
-  },
+  types: {} as { context: ChatContext; events: ChatEvent },
   actions: {
-    setLanguageAndGreet: assign(({ event }) => {
+    setLanguage: assign(({ event }) => {
       const e = event as Extract<ChatEvent, { type: 'SELECT_LANGUAGE' }>;
-      const text = OPENING_LINES[e.lang] ?? '';
-      return {
-        language: e.lang,
-        currentUtterance: OPENING_LINES[e.lang] ?? '',
-        messages: [{ role: 'kero' as const, text }],
-      };
+      return { language: e.lang };
     }),
     appendUserMessage: assign(({ context, event }) => {
-      const e = event as Extract<ChatEvent, { type: 'SPEECH_RESULT' }>;
-      return {
-        messages: [...context.messages, { role: 'user' as const, text: e.text }],
-      };
+      const e = event as Extract<ChatEvent, { type: 'USER_MESSAGE' }>;
+      return { messages: [...context.messages, { role: 'user' as const, text: e.text }] };
     }),
-    setResponseUtterance: assign(({ context, event }) => {
-      const e = event as Extract<ChatEvent, { type: 'RESPONSE_READY' }>;
-      return {
-        currentUtterance: e.text,
-        messages: [...context.messages, { role: 'kero' as const, text: e.text }],
-      };
+    appendKeroMessage: assign(({ context, event }) => {
+      const e = event as Extract<ChatEvent, { type: 'KERO_MESSAGE' }>;
+      return { messages: [...context.messages, { role: 'kero' as const, text: e.text }] };
     }),
+    setSpeaker: assign(({ event }) => {
+      const e = event as Extract<ChatEvent, { type: 'SET_SPEAKER' }>;
+      return { speaker: e.speaker };
+    }),
+    setError: assign(({ event }) => {
+      const e = event as Extract<ChatEvent, { type: 'ERROR' }>;
+      return { error: e.message, speaker: null };
+    }),
+    reset: assign(() => createInitialChatContext()),
   },
 }).createMachine({
   id: 'chat',
@@ -64,38 +55,29 @@ export const chatMachine = setup({
   states: {
     selectingLanguage: {
       on: {
-        SELECT_LANGUAGE: {
-          target: 'speaking',
-          actions: 'setLanguageAndGreet',
-        },
+        SELECT_LANGUAGE: { target: 'connecting', actions: 'setLanguage' },
       },
     },
-    speaking: {
+    connecting: {
       on: {
-        SPEECH_END: { target: 'idle' },
+        CONNECTED: { target: 'live' },
+        ERROR: { target: 'error', actions: 'setError' },
       },
     },
-    idle: {
+    live: {
       on: {
-        TAP_MIC: { target: 'listening' },
+        USER_MESSAGE: { actions: 'appendUserMessage' },
+        KERO_MESSAGE: { actions: 'appendKeroMessage' },
+        SET_SPEAKER: { actions: 'setSpeaker' },
+        END: { target: 'ended' },
+        ERROR: { target: 'error', actions: 'setError' },
       },
     },
-    listening: {
-      on: {
-        SPEECH_RESULT: {
-          target: 'processing',
-          actions: 'appendUserMessage',
-        },
-        SPEECH_CANCEL: { target: 'idle' },
-      },
+    ended: {
+      on: { RESTART: { target: 'selectingLanguage', actions: 'reset' } },
     },
-    processing: {
-      on: {
-        RESPONSE_READY: {
-          target: 'speaking',
-          actions: 'setResponseUtterance',
-        },
-      },
+    error: {
+      on: { RESTART: { target: 'selectingLanguage', actions: 'reset' } },
     },
   },
 });
