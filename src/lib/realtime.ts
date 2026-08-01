@@ -61,7 +61,6 @@ export function parseRealtimeEvent(raw: { type?: string; [k: string]: unknown })
   }
 }
 
-const REALTIME_MODEL = 'gpt-realtime';
 const CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 
 export interface RealtimeConnection {
@@ -77,6 +76,12 @@ export interface ConnectOptions {
   session: RealtimeSession;
   remoteAudio: HTMLAudioElement;
   onEvent: (event: RealtimeUiEvent) => void;
+  /**
+   * The realtime model to connect with. MUST match the model the ephemeral
+   * session was minted with — OpenAI rejects the SDP call otherwise
+   * ("Model X does not match the realtime token model").
+   */
+  model: string;
   /** Optional: send an initial response.create so Kero greets first. */
   greet?: boolean;
 }
@@ -126,7 +131,7 @@ export async function connectRealtime(opts: ConnectOptions): Promise<RealtimeCon
   // SDP offer/answer with OpenAI using the ephemeral key as bearer.
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-  const sdpRes = await fetch(`${CALLS_URL}?model=${REALTIME_MODEL}`, {
+  const sdpRes = await fetch(`${CALLS_URL}?model=${encodeURIComponent(opts.model)}`, {
     method: 'POST',
     body: offer.sdp,
     headers: {

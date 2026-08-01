@@ -66,9 +66,12 @@ export default function ChatboardApp() {
     if (!isConnecting || !language) return;
     let cancelled = false;
 
+    // Snapshot the selection once: the token is minted for this model and the
+    // SDP call must connect with the very same model.
+    const sel = settingsRef.current;
     (async () => {
       try {
-        const session = await getRealtimeSession(language, settingsRef.current);
+        const session = await getRealtimeSession(language, sel);
         if (cancelled) return;
         const audioEl = audioRef.current;
         if (!audioEl) {
@@ -78,6 +81,7 @@ export default function ChatboardApp() {
         const conn = await connectRealtime({
           session,
           remoteAudio: audioEl,
+          model: sel.model,
           greet: reconnectNonce === 0,
           onEvent: (evt) => {
             switch (evt.kind) {
