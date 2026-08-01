@@ -1,258 +1,165 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMachine } from '@xstate/react';
 import { chatMachine } from './machines/chatMachine';
-import { mockRespond } from './lib/mockRespond';
+import {
+  getRealtimeSession,
+  connectRealtime,
+  type RealtimeConnection,
+} from './lib/realtime';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 
 declare global {
   interface Window {
     __TAURI_INTERNALS__?: unknown;
-    SpeechRecognition: typeof SpeechRecognition;
-    webkitSpeechRecognition: typeof SpeechRecognition;
   }
 }
 
-const SpeechRecognitionAPI =
-  typeof window !== 'undefined'
-    ? (window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null)
-    : null;
-
-const STT_SUPPORTED = SpeechRecognitionAPI !== null;
-
-const LANG_CODES: Record<'en' | 'es', string> = { en: 'en-US', es: 'es-ES' };
+const MIC_DENIED_MSG =
+  '無法存取麥克風。請前往「系統設定 → 隱私權與安全性 → 麥克風」，允許 Kero 使用麥克風。';
 
 export default function ChatboardApp() {
   const [snapshot, send] = useMachine(chatMachine);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<InstanceType<typeof SpeechRecognition> | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const connRef = useRef<RealtimeConnection | null>(null);
 
-  // Interim text shown in the live user bubble while recognition is running
-  const [interimText, setInterimText] = useState('');
-  // Text input fallback (when STT is not supported)
-  const [fallbackText, setFallbackText] = useState('');
-  // Mic permission / recognition error message
-  const [micError, setMicError] = useState<string | null>(null);
+  // Streaming interim transcript for Kero's current turn.
+  const [keroInterim, setKeroInterim] = useState('');
 
-  // Emit chat-closed on window unload (keep existing logic)
+  // Emit chat-closed on window unload (keep existing Tauri behaviour).
   useEffect(() => {
     if (!window.__TAURI_INTERNALS__) return;
     let cleanup: (() => void) | null = null;
-
     import('@tauri-apps/api/event').then(({ emit }) => {
       const handle = () => { emit('chat-closed'); };
       window.addEventListener('beforeunload', handle);
       cleanup = () => window.removeEventListener('beforeunload', handle);
     });
-
     return () => { cleanup?.(); };
   }, []);
 
-  // Fire TTS whenever machine enters the 'speaking' state
-  useEffect(() => {
-    if (snapshot.value !== 'speaking') return;
-
-    const text = snapshot.context.currentUtterance;
-    const language = snapshot.context.language;
-    if (!text || !language) return;
-
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = LANG_CODES[language];
-    utter.onend = () => send({ type: 'SPEECH_END' });
-    speechSynthesis.speak(utter);
-
-    return () => {
-      speechSynthesis.cancel();
-    };
-  }, [snapshot.value, snapshot.context.currentUtterance, send]);
-
-  // When machine enters 'processing', generate a mock reply and send RESPONSE_READY
-  useEffect(() => {
-    if (snapshot.value !== 'processing') return;
-    const { language, messages } = snapshot.context;
-    if (!language) return;
-    const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
-    const reply = mockRespond(lastUserMessage?.text ?? '', language);
-    const timer = setTimeout(() => {
-      send({ type: 'RESPONSE_READY', text: reply });
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [snapshot.value, send]);
-
-  // Auto-scroll transcript to bottom when messages change
+  // Auto-scroll on new messages / interim text.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [snapshot.context.messages]);
+  }, [snapshot.context.messages, keroInterim]);
 
-  // Also scroll when interim text appears
+  // Connect when a language is chosen (machine enters 'connecting').
+  const language = snapshot.context.language;
+  const isConnecting = snapshot.value === 'connecting';
   useEffect(() => {
-    if (interimText) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [interimText]);
+    if (!isConnecting || !language) return;
+    let cancelled = false;
 
-  // Start Web Speech API recognition
-  const startRecognition = useCallback(() => {
-    if (!STT_SUPPORTED || !SpeechRecognitionAPI) return;
-
-    const language = snapshot.context.language;
-    const lang = language ? LANG_CODES[language] : 'en-US';
-
-    const recognition = new SpeechRecognitionAPI();
-    recognition.lang = lang;
-    recognition.interimResults = true;
-    recognition.continuous = false;
-    recognitionRef.current = recognition;
-
-    let finalReceived = false;
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const last = event.results[event.results.length - 1];
-      const text = last[0].transcript;
-      if (last.isFinal) {
-        finalReceived = true;
-        setInterimText('');
-        send({ type: 'SPEECH_RESULT', text });
-      } else {
-        setInterimText(text);
+    (async () => {
+      try {
+        const session = await getRealtimeSession(language);
+        if (cancelled) return;
+        const conn = await connectRealtime({
+          session,
+          remoteAudio: audioRef.current!,
+          greet: true,
+          onEvent: (evt) => {
+            switch (evt.kind) {
+              case 'user_transcript':
+                if (evt.text.trim()) send({ type: 'USER_MESSAGE', text: evt.text });
+                break;
+              case 'kero_speaking_start':
+                send({ type: 'SET_SPEAKER', speaker: 'kero' });
+                setKeroInterim('');
+                break;
+              case 'kero_delta':
+                setKeroInterim((prev) => prev + evt.text);
+                break;
+              case 'kero_done':
+                if (evt.text.trim()) send({ type: 'KERO_MESSAGE', text: evt.text });
+                setKeroInterim('');
+                break;
+              case 'kero_speaking_done':
+                send({ type: 'SET_SPEAKER', speaker: null });
+                break;
+              case 'error':
+                send({ type: 'ERROR', message: evt.message });
+                break;
+            }
+          },
+        });
+        if (cancelled) { conn.disconnect(); return; }
+        connRef.current = conn;
+        send({ type: 'CONNECTED' });
+      } catch (err) {
+        if (cancelled) return;
+        const msg = err instanceof DOMException && err.name === 'NotAllowedError'
+          ? MIC_DENIED_MSG
+          : err instanceof Error ? err.message : '連線失敗';
+        send({ type: 'ERROR', message: msg });
       }
-    };
+    })();
 
-    recognition.onend = () => {
-      setInterimText('');
-      recognitionRef.current = null;
-      // If recognition ended without a final result, machine is stuck in
-      // 'listening'. Send SPEECH_CANCEL so the user can try again.
-      if (!finalReceived) {
-        send({ type: 'SPEECH_CANCEL' });
-      }
-    };
+    return () => { cancelled = true; };
+  }, [isConnecting, language, send]);
 
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      console.warn('Speech recognition error:', event.error);
-      if (event.error === 'not-allowed') {
-        setMicError(
-          '無法存取麥克風。請前往「系統設定 → 隱私權與安全性 → 麥克風」，允許 Kero 使用麥克風。'
-        );
-      }
-      // onerror is always followed by onend, which sends SPEECH_CANCEL.
-      setInterimText('');
-      recognitionRef.current = null;
-    };
-
-    setMicError(null);
-    recognition.start();
-  }, [snapshot.context.language, send]);
-
-  // Abort recognition if machine leaves 'listening' unexpectedly
+  // Tear down the connection when leaving 'live'.
+  const isLive = snapshot.value === 'live';
   useEffect(() => {
-    if (snapshot.value !== 'listening' && recognitionRef.current) {
-      recognitionRef.current.abort();
-      recognitionRef.current = null;
-      setInterimText('');
+    if (!isLive && connRef.current) {
+      connRef.current.disconnect();
+      connRef.current = null;
+      setKeroInterim('');
     }
-  }, [snapshot.value]);
+  }, [isLive]);
 
-  const isIdle = snapshot.value === 'idle';
-  const isListening = snapshot.value === 'listening';
-  const isSpeaking = snapshot.value === 'speaking';
-  const isProcessing = snapshot.value === 'processing';
+  const pttDown = useCallback(() => {
+    connRef.current?.startTalking();
+    send({ type: 'SET_SPEAKER', speaker: 'user' });
+  }, [send]);
 
-  const micDisabled = isSpeaking || isProcessing || isListening;
+  const pttUp = useCallback(() => {
+    connRef.current?.stopTalking();
+    send({ type: 'SET_SPEAKER', speaker: null });
+  }, [send]);
 
-  const handleMicClick = useCallback(async () => {
-    // Use getUserMedia to trigger the OS microphone permission dialog first.
-    // Web Speech API alone may not reliably trigger the system prompt in WKWebView.
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((t) => t.stop());
-      // Wait for the OS to fully release the mic before SpeechRecognition
-      // tries to acquire it — without this delay recognition gets no audio.
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      setMicError(null);
-    } catch {
-      setMicError(
-        '無法存取麥克風。請前往「系統設定 → 隱私權與安全性 → 麥克風」，允許 Kero 使用麥克風。'
-      );
-      return;
-    }
-    send({ type: 'TAP_MIC' });
-    startRecognition();
-  }, [send, startRecognition]);
-
-  const handleFallbackSubmit = () => {
-    if (!fallbackText.trim()) return;
-    const text = fallbackText.trim();
-    setFallbackText('');
-    send({ type: 'TAP_MIC' });
-    // Give the machine a tick to enter listening, then send the result
-    setTimeout(() => {
-      send({ type: 'SPEECH_RESULT', text });
-    }, 0);
-  };
+  const speaker = snapshot.context.speaker;
+  const keroSpeaking = speaker === 'kero';
 
   return (
     <main className="flex flex-col h-screen bg-background text-foreground">
-      {/* Header */}
       <header className="flex items-center px-4 py-3 border-b border-border shrink-0">
         <span className="text-lg font-semibold">🐸 Kero 對話練習</span>
       </header>
 
-      {/* Body */}
       {snapshot.value === 'selectingLanguage' ? (
-        /* Language selection */
         <div className="flex flex-1 flex-col items-center justify-center gap-6">
           <p className="text-base text-muted-foreground">請選擇對話語言</p>
           <div className="flex gap-4">
-            <Button
-              size="lg"
-              onClick={() => send({ type: 'SELECT_LANGUAGE', lang: 'en' })}
-            >
+            <Button size="lg" onClick={() => send({ type: 'SELECT_LANGUAGE', lang: 'en' })}>
               English
             </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              onClick={() => send({ type: 'SELECT_LANGUAGE', lang: 'es' })}
-            >
+            <Button size="lg" variant="outline" onClick={() => send({ type: 'SELECT_LANGUAGE', lang: 'es' })}>
               Español
             </Button>
           </div>
         </div>
       ) : (
-        /* Conversation view */
         <>
           <ScrollArea className="flex-1 px-4 py-3">
             <div className="flex flex-col gap-3">
-              {snapshot.context.messages.map((msg, i) => {
-                const isLastKeroWhileSpeaking =
-                  isSpeaking &&
-                  msg.role === 'kero' &&
-                  i === snapshot.context.messages.length - 1;
-
-                return (
-                  <div
-                    key={i}
-                    className={`flex ${msg.role === 'kero' ? 'justify-start' : 'justify-end'}`}
-                  >
-                    <div
-                      className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm leading-relaxed ${
-                        msg.role === 'kero'
-                          ? 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-100'
-                          : 'bg-secondary text-secondary-foreground'
-                      } ${isLastKeroWhileSpeaking ? 'animate-pulse' : ''}`}
-                    >
-                      {msg.text}
-                    </div>
+              {snapshot.context.messages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'kero' ? 'justify-start' : 'justify-end'}`}>
+                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm leading-relaxed ${
+                    msg.role === 'kero'
+                      ? 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-100'
+                      : 'bg-secondary text-secondary-foreground'
+                  }`}>
+                    {msg.text}
                   </div>
-                );
-              })}
+                </div>
+              ))}
 
-              {/* Live interim user bubble */}
-              {interimText ? (
-                <div className="flex justify-end">
-                  <div className="max-w-[75%] rounded-2xl px-4 py-2 text-sm leading-relaxed bg-secondary/50 text-secondary-foreground/60 italic">
-                    {interimText}
+              {keroInterim ? (
+                <div className="flex justify-start">
+                  <div className="max-w-[75%] rounded-2xl px-4 py-2 text-sm leading-relaxed bg-green-100/60 text-green-900/70 italic dark:bg-green-900/20">
+                    {keroInterim}
                   </div>
                 </div>
               ) : null}
@@ -261,51 +168,45 @@ export default function ChatboardApp() {
             </div>
           </ScrollArea>
 
-          {/* Control bar */}
           <div className="flex flex-col items-center border-t border-border shrink-0">
-          {micError ? (
-            <p className="text-xs text-red-500 px-4 pt-2">{micError}</p>
-          ) : null}
-          <div className="flex items-center justify-center px-4 py-3 gap-3 w-full">
-            {STT_SUPPORTED ? (
-              <Button
-                size="icon-lg"
-                variant="outline"
-                disabled={micDisabled}
-                aria-label="按下說話"
-                aria-pressed={isListening}
-                onClick={handleMicClick}
-                className={isListening ? 'ring-2 ring-red-500 ring-offset-2 text-red-500' : ''}
-              >
-                🎤
-              </Button>
-            ) : (
-              /* Fallback text input when Web Speech API is not supported */
-              <>
-                <input
-                  type="text"
-                  className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="輸入訊息…"
-                  value={fallbackText}
-                  disabled={!isIdle}
-                  onChange={(e) => setFallbackText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleFallbackSubmit();
-                  }}
-                />
-                <Button
-                  size="sm"
-                  disabled={!isIdle || !fallbackText.trim()}
-                  onClick={handleFallbackSubmit}
-                >
-                  送出
+            {snapshot.value === 'error' ? (
+              <p className="text-xs text-red-500 px-4 pt-2">{snapshot.context.error}</p>
+            ) : null}
+
+            <div className="flex items-center justify-center px-4 py-3 gap-3 w-full">
+              {snapshot.value === 'connecting' ? (
+                <span className="text-sm text-muted-foreground">連線中…</span>
+              ) : snapshot.value === 'live' ? (
+                <>
+                  <Button
+                    size="icon-lg"
+                    variant="outline"
+                    disabled={keroSpeaking}
+                    aria-label="按住說話"
+                    aria-pressed={speaker === 'user'}
+                    onPointerDown={pttDown}
+                    onPointerUp={pttUp}
+                    onPointerLeave={() => { if (speaker === 'user') pttUp(); }}
+                    className={speaker === 'user' ? 'ring-2 ring-red-500 ring-offset-2 text-red-500' : ''}
+                  >
+                    🎤
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => send({ type: 'END' })}>
+                    結束
+                  </Button>
+                </>
+              ) : (
+                <Button size="sm" onClick={() => send({ type: 'RESTART' })}>
+                  重新開始
                 </Button>
-              </>
-            )}
-          </div>
+              )}
+            </div>
           </div>
         </>
       )}
+
+      {/* Hidden element that plays Kero's streamed voice. */}
+      <audio ref={audioRef} autoPlay hidden />
     </main>
   );
 }
