@@ -142,7 +142,20 @@ Shell 用 `settingsRef`（每次 render 同步更新的 ref）在 connect effect
 
 **注意：** 指令是 session 設定，**要重新連線／新對話才生效**（進行中的舊 session 不變）。教學風格目前寫死在 server，非使用者可調；若之後要「難度／風格」開關再擴充。
 
-### 4.9 其他小坑
+### 4.9 側邊欄改成抽屜（收合 + 對齊視窗高度 + 小視窗自動關閉）
+
+**需求：** 側邊欄高度和視窗對齊、可像抽屜收合、小視窗時自動關閉。
+
+**做法：** 把 `AppSidebar` 的 `collapsible="none"` 改成 `collapsible="offcanvas"`，並在兩個 View 的 header 加 `SidebarTrigger`（漢堡鈕）切換。shadcn 的 offcanvas Sidebar 一次滿足三點：
+- **對齊視窗高度**：桌面容器是 `fixed inset-y-0 h-svh`（整個視窗高）。
+- **抽屜收合**：`SidebarTrigger` toggle，滑入滑出。
+- **小視窗自動關閉**：`SidebarProvider` 內建 `useIsMobile`（斷點 768px），視窗小於斷點時改渲染成 `Sheet` 覆蓋式抽屜，且預設關閉。
+
+在小視窗（`isMobile`）點選 View 後自動關閉抽屜（`setOpenMobile(false)`），符合抽屜直覺。
+
+**斷點取捨：** chatboard 視窗預設 400×550（可縮放）。400 < 768 → 預設就是「關閉的覆蓋抽屜」，把聊天寬度讓好讓滿；放大超過 768px 才 dock 成常駐側邊欄。若想讓預設 400px 就 dock，得調低 `use-mobile.ts` 的 `MOBILE_BREAKPOINT`（但 11rem 側邊欄佔 400px 的 44%，會很擠，所以維持抽屜其實比較合理）。
+
+### 4.10 其他小坑
 
 - **`.scratch/` 被 gitignore：** ticket 檔案（`.scratch/chatboard-sidebar-settings/issues/`）不進版控，與專案既有 ticket 慣例一致。設計文件（spec/ADR/glossary）才進 git。
 - **shadcn sidebar 能對上 base-nova registry：** `npx shadcn@latest add sidebar --yes` 一次帶入 7 個檔（sidebar/sheet/tooltip/separator/skeleton/input + `use-mobile`），與 `@base-ui/react` 無衝突，不需退回手刻 `<aside>`。CSS 變數（`--sidebar-*`）在 `styles.css` 已存在。用 `collapsible="none"` 做小視窗的靜態側邊欄，寬度以 `--sidebar-width: 11rem` 覆寫。

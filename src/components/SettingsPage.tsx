@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 import {
   MODELS,
   MALE_VOICES,
@@ -47,7 +48,8 @@ export default function SettingsPage({ saved, onSave }: SettingsPageProps) {
 
   return (
     <main className="flex flex-col h-screen bg-background text-foreground">
-      <header className="flex items-center px-4 py-3 border-b border-border shrink-0">
+      <header className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
+        <SidebarTrigger className="-ml-1" />
         <span className="text-lg font-semibold">⚙️ 設定</span>
       </header>
 

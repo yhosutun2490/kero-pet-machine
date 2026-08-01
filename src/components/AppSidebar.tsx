@@ -8,6 +8,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from '@/components/ui/sidebar';
 
 export type ChatboardView = 'practice' | 'settings';
@@ -22,10 +23,22 @@ export interface AppSidebarProps {
   onSelect: (view: ChatboardView) => void;
 }
 
-/** Static in-window nav for the Chatboard window's Views. No routing. */
+/**
+ * In-window nav for the Chatboard window's Views. No routing. Rendered as an
+ * offcanvas drawer: full window height, toggleable, and (via the provider's
+ * mobile breakpoint) auto-collapsed to a closed sheet on a small window.
+ */
 export default function AppSidebar({ active, onSelect }: AppSidebarProps) {
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  const handleSelect = (view: ChatboardView) => {
+    onSelect(view);
+    // Close the drawer after picking a View on a small window.
+    if (isMobile) setOpenMobile(false);
+  };
+
   return (
-    <Sidebar collapsible="none" className="border-r border-sidebar-border">
+    <Sidebar collapsible="offcanvas">
       <SidebarHeader className="px-3 py-3">
         <span className="text-base font-semibold">🐸 Kero</span>
       </SidebarHeader>
@@ -37,7 +50,7 @@ export default function AppSidebar({ active, onSelect }: AppSidebarProps) {
                 <SidebarMenuItem key={view}>
                   <SidebarMenuButton
                     isActive={active === view}
-                    onClick={() => onSelect(view)}
+                    onClick={() => handleSelect(view)}
                   >
                     <Icon />
                     <span>{label}</span>

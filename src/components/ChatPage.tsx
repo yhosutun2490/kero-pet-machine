@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { SnapshotFrom } from 'xstate';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 import type { chatMachine, ChatEvent } from '@/machines/chatMachine';
 
 type ChatSnapshot = SnapshotFrom<typeof chatMachine>;
@@ -33,7 +34,8 @@ export default function ChatPage({ snapshot, send, pttDown, pttUp, keroInterim }
 
   return (
     <main className="flex flex-col h-screen bg-background text-foreground">
-      <header className="flex items-center px-4 py-3 border-b border-border shrink-0">
+      <header className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
+        <SidebarTrigger className="-ml-1" />
         <span className="text-lg font-semibold">🐸 Kero 對話練習</span>
       </header>
 
