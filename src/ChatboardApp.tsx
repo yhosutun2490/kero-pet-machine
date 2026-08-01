@@ -55,9 +55,14 @@ export default function ChatboardApp() {
       try {
         const session = await getRealtimeSession(language);
         if (cancelled) return;
+        const audioEl = audioRef.current;
+        if (!audioEl) {
+          send({ type: 'ERROR', message: '音訊元件未就緒' });
+          return;
+        }
         const conn = await connectRealtime({
           session,
-          remoteAudio: audioRef.current!,
+          remoteAudio: audioEl,
           greet: true,
           onEvent: (evt) => {
             switch (evt.kind) {
@@ -109,12 +114,31 @@ export default function ChatboardApp() {
     }
   }, [isLive]);
 
+  // Guarantee disconnect on unmount regardless of machine state.
+  // (Empty deps: cleanup runs only on unmount, so it never tears down a
+  // connection that the connect effect just established.)
+  useEffect(() => {
+    return () => {
+      connRef.current?.disconnect();
+      connRef.current = null;
+    };
+  }, []);
+
+  // Track whether push-to-talk is currently active so pttUp is idempotent —
+  // pointerup / pointerleave / pointercancel can all fire, and a leave without
+  // a prior press must NOT commit an empty audio buffer.
+  const talkingRef = useRef(false);
+
   const pttDown = useCallback(() => {
+    if (talkingRef.current) return;
+    talkingRef.current = true;
     connRef.current?.startTalking();
     send({ type: 'SET_SPEAKER', speaker: 'user' });
   }, [send]);
 
   const pttUp = useCallback(() => {
+    if (!talkingRef.current) return;
+    talkingRef.current = false;
     connRef.current?.stopTalking();
     send({ type: 'SET_SPEAKER', speaker: null });
   }, [send]);
@@ -186,7 +210,8 @@ export default function ChatboardApp() {
                     aria-pressed={speaker === 'user'}
                     onPointerDown={pttDown}
                     onPointerUp={pttUp}
-                    onPointerLeave={() => { if (speaker === 'user') pttUp(); }}
+                    onPointerLeave={pttUp}
+                    onPointerCancel={pttUp}
                     className={speaker === 'user' ? 'ring-2 ring-red-500 ring-offset-2 text-red-500' : ''}
                   >
                     🎤
